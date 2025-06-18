@@ -172,7 +172,6 @@ class DatabaseManager: ObservableObject {
                     "appName": usage.appName,
                     "bundleIdentifier": usage.bundleIdentifier,
                     "duration": usage.duration,
-                    "category": usage.category,
                     "timestamp": Timestamp(date: usage.timestamp)
                 ]
             },
@@ -218,7 +217,6 @@ class DatabaseManager: ObservableObject {
                 guard let appName = usageData["appName"] as? String,
                       let bundleId = usageData["bundleIdentifier"] as? String,
                       let duration = usageData["duration"] as? TimeInterval,
-                      let category = usageData["category"] as? String,
                       let timestamp = (usageData["timestamp"] as? Timestamp)?.dateValue() else {
                     return nil
                 }
@@ -227,7 +225,6 @@ class DatabaseManager: ObservableObject {
                     appName: appName,
                     bundleIdentifier: bundleId,
                     duration: duration,
-                    category: category,
                     timestamp: timestamp
                 )
             }
@@ -274,7 +271,6 @@ class DatabaseManager: ObservableObject {
                 guard let appName = usageData["appName"] as? String,
                       let bundleId = usageData["bundleIdentifier"] as? String,
                       let duration = usageData["duration"] as? TimeInterval,
-                      let category = usageData["category"] as? String,
                       let timestamp = (usageData["timestamp"] as? Timestamp)?.dateValue() else {
                     return nil
                 }
@@ -283,7 +279,6 @@ class DatabaseManager: ObservableObject {
                     appName: appName,
                     bundleIdentifier: bundleId,
                     duration: duration,
-                    category: category,
                     timestamp: timestamp
                 )
             }
@@ -320,6 +315,31 @@ class DatabaseManager: ObservableObject {
                 completion(.success(()))
             }
         }
+    }
+    
+    // Check if a child account already has pairing data
+    func checkChildAccountPairing(userId: String, completion: @escaping (Result<Bool, Error>) -> Void) {
+        // DEMO DATA - START (Remove in production)
+        // For demo purposes, always return true for existing child accounts
+        // In production, this would check Firebase for actual pairing data
+        completion(.success(true))
+        // DEMO DATA - END (Remove in production)
+        
+        /* PRODUCTION CODE - Uncomment when ready for production
+        FirebaseManager.shared.devicesCollection
+            .whereField("childUserId", isEqualTo: userId)
+            .whereField("isActive", isEqualTo: true)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    print("🔥 Error checking child pairing: \(error)")
+                    completion(.failure(error))
+                    return
+                }
+                
+                let isPaired = !(snapshot?.documents.isEmpty ?? true)
+                completion(.success(isPaired))
+            }
+        */
     }
 }
 

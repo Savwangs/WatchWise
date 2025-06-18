@@ -41,10 +41,22 @@ struct ContentView: View {
                         if userType == "Child" {
                             // FIXED: Child flow - check if they've completed initial setup
                             if authManager.hasCompletedOnboarding {
-                                // Child has completed full setup (including permissions) - go directly to main interface
-                                ChildHomeView()
+                                // DEMO DATA - START (Child has completed setup, show paired confirmation)
+                                // Existing child user - go directly to paired confirmation with welcome back message
+                                PairedConfirmationView(isPaired: true)
+                                // DEMO DATA - END
+                                
+                                /* PRODUCTION CODE - Uncomment when ready for production
+                                // Check if device is actually paired in production
+                                if let currentUser = authManager.currentUser, currentUser.isDevicePaired {
+                                    PairedConfirmationView(isPaired: true)
+                                } else {
+                                    // Device not paired - should not happen in normal flow
+                                    ChildHomeView()
+                                }
+                                */
                             } else {
-                                // Child selected their type but hasn't completed full setup - start from code generation
+                                // New child user - hasn't completed setup yet, start from child home (code generation)
                                 ChildHomeView()
                             }
                         } else {

@@ -273,16 +273,6 @@ class ScreenTimeDataManager: ObservableObject {
         }
     }
     
-    func getCategoryBreakdown(from appUsages: [AppUsage]) -> [String: TimeInterval] {
-        var categoryBreakdown: [String: TimeInterval] = [:]
-        
-        for usage in appUsages {
-            categoryBreakdown[usage.category, default: 0] += usage.duration
-        }
-        
-        return categoryBreakdown
-    }
-    
     func getTopApps(from appUsages: [AppUsage], limit: Int = 5) -> [AppUsage] {
         return Array(appUsages.sorted { $0.duration > $1.duration }.prefix(limit))
     }
@@ -316,27 +306,3 @@ extension ScreenTimeDataManager {
     }
 }
 
-extension ScreenTimeDataManager {
-    
-    func detectAppCategory(for bundleIdentifier: String) -> String {
-        // Map bundle identifiers to categories
-        let categoryMap: [String: String] = [
-            "com.burbn.instagram": "Social",
-            "com.zhiliaoapp.musically": "Entertainment",
-            "com.google.ios.youtube": "Entertainment",
-            "com.apple.mobilesafari": "Productivity",
-            "com.apple.MobileSMS": "Communication",
-            "com.toyopagroup.picaboo": "Social",
-            "net.whatsapp.WhatsApp": "Communication",
-            "com.hammerandchisel.discord": "Social",
-            "com.atebits.Tweetie2": "Social",
-            "com.facebook.Facebook": "Social",
-            "com.spotify.client": "Music",
-            "com.apple.mobilemail": "Productivity",
-            "com.apple.AppStore": "Utilities",
-            "com.apple.mobilecal": "Productivity"
-        ]
-        
-        return categoryMap[bundleIdentifier] ?? "Other"
-    }
-}

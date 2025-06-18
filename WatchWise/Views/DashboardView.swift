@@ -250,10 +250,6 @@ struct DataDisplayView: View {
                 TopAppsCard(appUsages: screenTimeData.appUsages)
             }
             
-            // Category Breakdown (if we have app data)
-            if !screenTimeData.appUsages.isEmpty {
-                CategoryBreakdownCard(appUsages: screenTimeData.appUsages)
-            }
             
             // Hourly Breakdown Chart (only show if we have hourly data)
             if !screenTimeData.hourlyBreakdown.isEmpty {
@@ -348,9 +344,6 @@ struct TopAppsCard: View {
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                             
-                            Text(usage.category)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
                         }
                     }
                 }
@@ -360,82 +353,6 @@ struct TopAppsCard: View {
         .background(Color(.systemGray6))
         .cornerRadius(12)
         .padding(.horizontal)
-    }
-    
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        let hours = Int(duration) / 3600
-        let minutes = Int(duration) % 3600 / 60
-        
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        } else {
-            return "\(minutes)m"
-        }
-    }
-}
-
-// MARK: - Category Breakdown Card
-struct CategoryBreakdownCard: View {
-    let appUsages: [AppUsage]
-    
-    private var categoryBreakdown: [String: TimeInterval] {
-        var breakdown: [String: TimeInterval] = [:]
-        for usage in appUsages {
-            breakdown[usage.category, default: 0] += usage.duration
-        }
-        return breakdown
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Image(systemName: "square.grid.2x2.fill")
-                    .foregroundColor(.purple)
-                Text("By Category")
-                    .font(.headline)
-                Spacer()
-            }
-            
-            if categoryBreakdown.isEmpty {
-                Text("No category data available")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .padding(.vertical)
-            } else {
-                ForEach(Array(categoryBreakdown.sorted { $0.value > $1.value }), id: \.key) { category, duration in
-                    HStack {
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(colorForCategory(category))
-                            .frame(width: 4, height: 20)
-                        
-                        Text(category)
-                            .font(.body)
-                        
-                        Spacer()
-                        
-                        Text(formatDuration(duration))
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-        .padding(.horizontal)
-    }
-    
-    private func colorForCategory(_ category: String) -> Color {
-        switch category {
-        case "Social": return .blue
-        case "Entertainment": return .red
-        case "Productivity": return .green
-        case "Communication": return .orange
-        case "Music": return .purple
-        case "Games": return .pink
-        default: return .gray
-        }
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {

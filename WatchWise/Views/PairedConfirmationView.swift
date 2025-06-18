@@ -15,20 +15,45 @@ struct PairedConfirmationView: View {
     
     var body: some View {
         VStack(spacing: 40) {
-            // Success Header
+            // Success Header - Modified to not show "Connection Successful" for existing accounts
             VStack(spacing: 20) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 80))
                     .foregroundColor(.green)
                 
-                Text("Connected Successfully!")
+                // DEMO DATA - START (Remove in production)
+                if authManager.isReturningChildUser() {
+                    Text("Welcome back, Savir!")
+                        .font(.title)
+                        .fontWeight(.bold)
+                    
+                    Text("Your device (Savir's iPhone) is connected to your parent")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                } else {
+                    Text("Connection Successful!")
+                        .font(.title)
+                        .fontWeight(.bold)
+                    
+                    Text("Your device (Savir's iPhone) is now connected to your parent")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                // DEMO DATA - END (Remove in production)
+                
+                /* PRODUCTION CODE - Uncomment when ready for production
+                Text("Welcome back!")
                     .font(.title)
                     .fontWeight(.bold)
                 
                 Text("Your device is connected to your parent")
+                
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
+                 */
             }
             .padding(.top, 80)
             
@@ -147,9 +172,31 @@ struct PairedConfirmationView: View {
     }
     
     private func updateScreenTime() {
+        // DEMO DATA - START (Remove in production)
+        // Use demo data from ScreenTimeData for consistency
+        let demoData = ScreenTimeData.demoData
+        let hours = Int(demoData.totalScreenTime) / 3600
+        let minutes = Int(demoData.totalScreenTime) % 3600 / 60
+        currentScreenTime = hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
+        // DEMO DATA - END (Remove in production)
+        
+        /* PRODUCTION CODE - Uncomment when ready for production
+            // In a real app, this would fetch actual screen time data from Firebase
+            // Example implementation:
+            // Task {
+            //     if let userId = authManager.currentUser?.id {
+            //         let screenTimeData = try await databaseManager.getScreenTimeData(for: userId, date: Date())
+            //         await MainActor.run {
+            //             let hours = Int(screenTimeData.totalScreenTime) / 3600
+            //             let minutes = Int(screenTimeData.totalScreenTime) % 3600 / 60
+            //             currentScreenTime = hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
+            //         }
+            //     }
+            // }
+        */
         // In a real app, this would fetch actual screen time data
-        let sampleTimes = ["1h 23m", "2h 45m", "3h 12m", "45m", "1h 56m"]
-        currentScreenTime = sampleTimes.randomElement() ?? "2h 45m"
+
+        
     }
 }
 

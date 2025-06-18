@@ -33,6 +33,9 @@ class AuthenticationManager: ObservableObject {
     @Published var isAuthenticated = false
     @Published var currentUser: AppUser?
     @Published var isLoading = true
+    // DEMO DATA - START (Track if user just signed up)
+    @Published var isNewSignUp = false
+    // DEMO DATA - END
     
     private let db = Firestore.firestore()
     private var authStateListener: AuthStateDidChangeListenerHandle?
@@ -83,6 +86,9 @@ class AuthenticationManager: ObservableObject {
                     completion(.failure(error))
                 } else if let firebaseUser = result?.user {
                     print("✅ User created successfully: \(firebaseUser.uid)")
+                    // DEMO DATA - START (Mark as new sign up)
+                    self?.isNewSignUp = true
+                    // DEMO DATA - END
                     // Create user profile in Firestore WITHOUT userType (will be set later)
                     self?.createUserProfile(firebaseUser: firebaseUser, completion: completion)
                 }
@@ -100,6 +106,9 @@ class AuthenticationManager: ObservableObject {
                     completion(.failure(error))
                 } else if let firebaseUser = result?.user {
                     print("✅ User signed in successfully: \(firebaseUser.uid)")
+                    // DEMO DATA - START (Mark as existing sign in)
+                    self?.isNewSignUp = false
+                    // DEMO DATA - END
                     // Explicitly load the user profile to ensure state is updated
                     self?.loadUserProfile(userId: firebaseUser.uid)
                     completion(.success(()))
@@ -152,6 +161,9 @@ class AuthenticationManager: ObservableObject {
     func signOut() {
         do {
             try Auth.auth().signOut()
+            // DEMO DATA - START (Reset sign up flag)
+            isNewSignUp = false
+            // DEMO DATA - END
             print("✅ User signed out successfully")
         } catch {
             print("🔥 Sign out error: \(error.localizedDescription)")
@@ -367,4 +379,23 @@ class AuthenticationManager: ObservableObject {
         print("  - userType: \(currentUser?.userType ?? "nil")")
         print("  - hasCompletedOnboarding: \(hasCompletedOnboarding)")
     }
+    
+    // DEMO DATA - START (Helper method to check if child is returning user)
+    func isReturningChildUser() -> Bool {
+        guard let currentUser = currentUser else { return false }
+        // Return true only if it's a Child user, has completed onboarding, AND is not a new sign up
+        return currentUser.userType == "Child" &&
+               currentUser.hasCompletedOnboarding &&
+               !isNewSignUp
+    }
+    // DEMO DATA - END
+
+    /* PRODUCTION CODE - Uncomment when ready for production
+    func isReturningChildUser() -> Bool {
+        guard let currentUser = currentUser else { return false }
+        return currentUser.userType == "Child" &&
+               currentUser.hasCompletedOnboarding &&
+               currentUser.isDevicePaired
+    }
+    */
 }

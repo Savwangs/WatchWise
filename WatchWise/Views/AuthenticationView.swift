@@ -170,9 +170,7 @@ struct AuthenticationView: View {
                     case .success:
                         print("✅ Sign in successful")
                         // Force a slight delay to ensure auth state is fully updated
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            authManager.debugCurrentState()
-                        }
+                        self.checkExistingChildAccount()
                     case .failure(let error):
                         alertMessage = error.localizedDescription
                         showAlert = true
@@ -200,6 +198,41 @@ struct AuthenticationView: View {
         case .failure(let error):
             alertMessage = "Apple Sign In failed: \(error.localizedDescription)"
             showAlert = true
+        }
+    }
+    
+    private func checkExistingChildAccount() {
+        guard let userId = authManager.currentUser?.id else {
+            print("✅ No current user, proceeding with normal flow")
+            return
+        }
+        
+        // Check if user has a stored user type
+        let storedUserType = UserDefaults.standard.string(forKey: "userType")
+        
+        if storedUserType == "Child" {
+            // This is a child account, check if already paired
+            DatabaseManager.shared.checkChildAccountPairing(userId: userId) { result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(let isPaired):
+                        if isPaired {
+                            // Child is already paired, complete onboarding and go straight to PairedConfirmationView
+                            print("✅ Child account already paired, skipping setup")
+                            authManager.completeOnboarding()
+                        } else {
+                            // Child exists but not paired, go through normal pairing flow
+                            print("✅ Child account exists but not paired, continuing setup")
+                        }
+                    case .failure(let error):
+                        print("🔥 Error checking child pairing: \(error)")
+                        // On error, continue with normal flow
+                    }
+                }
+            }
+        } else {
+            // Not a child account or no stored type, continue normal flow
+            print("✅ Not a child account or no stored type, continuing normal flow")
         }
     }
 }
