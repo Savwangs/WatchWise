@@ -139,12 +139,9 @@ struct SettingsView: View {
                                     // Individual App Limits
                                     ForEach(getTopAppsForLimits(), id: \.bundleIdentifier) { app in
                                         AppLimitSlider(
-                                            app: app,
-                                            currentLimit: alertSettings.appLimits[app.bundleIdentifier] ?? 2.0,
-                                            onLimitChange: { newLimit in
-                                                alertSettings.appLimits[app.bundleIdentifier] = newLimit
-                                                saveAlertSettings()
-                                            }
+                                            appName: app.appName,
+                                            currentUsage: app.duration,
+                                            timeLimit: bindingForApp(app.bundleIdentifier)
                                         )
                                     }
                                 }
@@ -441,6 +438,12 @@ struct SettingsView: View {
                 bundleIdentifier: "com.toyopagroup.picaboo",
                 duration: 1800, // 30m
                 timestamp: Date().addingTimeInterval(-900)
+            ),
+            AppUsage(
+                appName: "Messages",
+                bundleIdentifier: "com.apple.MobileSMS",
+                duration: 900, // 15m
+                timestamp: Date().addingTimeInterval(-600)
             )
         ]
         return Array(demoApps.prefix(6)) // Top 6 apps
@@ -481,60 +484,46 @@ struct SettingsView: View {
                 }
         }
     }
+    
+    private func bindingForApp(_ bundleId: String) -> Binding<Double> {
+        return Binding(
+            get: { alertSettings.appLimits[bundleId] ?? 2.0 },
+            set: { newValue in
+                alertSettings.appLimits[bundleId] = newValue
+                saveAlertSettings()
+            }
+        )
+    }
 }
 
-// MARK: - App Limit Slider Component
+// MARK: - Clean App Limit Slider (for Settings)
 struct AppLimitSlider: View {
-    let app: AppUsage
-    let currentLimit: Double
-    let onLimitChange: (Double) -> Void
+    let appName: String
+    let currentUsage: TimeInterval
+    @Binding var timeLimit: Double // in hours
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(app.appName)
+                Text(appName)
                     .font(.body)
                     .fontWeight(.medium)
                 
                 Spacer()
                 
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("Current: \(formatDuration(app.duration))")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Text("Limit: \(formatLimitDuration(currentLimit))")
-                        .font(.caption)
-                        .foregroundColor(app.duration > currentLimit * 3600 ? .red : .primary)
-                }
+                Text("Used: \(formatDuration(currentUsage))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
             
             HStack {
-                Slider(value: Binding(
-                    get: { currentLimit },
-                    set: { onLimitChange($0) }
-                ), in: 0.25...8.0, step: 0.25)
+                Slider(value: $timeLimit, in: 0.25...8.0, step: 0.25)
                 
-                Text(formatLimitDuration(currentLimit))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .frame(width: 60)
+                Text("Limit: \(formatLimitDuration(timeLimit))")
+                    .font(.subheadline)
+                    .foregroundColor(.primary)
+                    .frame(width: 80, alignment: .leading)
             }
-            
-            // Usage indicator bar
-            GeometryReader { geometry in
-                HStack(spacing: 0) {
-                    Rectangle()
-                        .fill(app.duration > currentLimit * 3600 ? Color.red : Color.green)
-                        .frame(width: min(geometry.size.width,
-                                        geometry.size.width * CGFloat(app.duration / (currentLimit * 3600))))
-                    
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                }
-            }
-            .frame(height: 4)
-            .cornerRadius(2)
         }
         .padding()
         .background(Color(.systemGray6))

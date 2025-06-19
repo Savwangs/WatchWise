@@ -252,23 +252,22 @@ extension ScreenTimeData {
             )
         ]
         
+        // DEMO DATA - Accurate hourly breakdown that matches total (Remove in production)
         let hourlyData: [Int: TimeInterval] = [
-            8: 600,   // 8 AM - 10 minutes
-            9: 1800,  // 9 AM - 30 minutes
-            10: 900,  // 10 AM - 15 minutes
-            12: 2400, // 12 PM - 40 minutes
-            14: 1800, // 2 PM - 30 minutes
-            16: 3600, // 4 PM - 1 hour
-            18: 2700, // 6 PM - 45 minutes
-            20: 1800, // 8 PM - 30 minutes
-            21: 1200  // 9 PM - 20 minutes
-        ]
+            8: 900,   // 8 AM - 15 minutes (Messages)
+            9: 1800,  // 9 AM - 30 minutes (Snapchat)
+            10: 1200, // 10 AM - 20 minutes (Safari)
+            12: 2700, // 12 PM - 45 minutes (TikTok)
+            14: 4500, // 2 PM - 1h 15m (Instagram)
+            16: 3600, // 4 PM - 1 hour (YouTube)
+        ] // Total: 14700 seconds = 4h 5m
+        // DEMO DATA - END
         
         return ScreenTimeData(
             id: "demo-screen-time-data",
             deviceId: "demo-device-id",
             date: Date(),
-            totalScreenTime: demoApps.reduce(0) { $0 + $1.duration },
+            totalScreenTime: demoApps.reduce(0) { $0 + $1.duration }, // This equals 14700
             appUsages: demoApps,
             hourlyBreakdown: hourlyData
         )
@@ -283,17 +282,17 @@ extension AlertSettings {
             alertTimes: ["12:00", "18:00"],
             enabledCategories: ["Social Networking", "Games", "Entertainment"],
             appLimits: [
-                "com.burbn.instagram": 1.25, // 1h 15m current usage
-                "com.zhiliaoapp.musically": 0.75, // 45m current usage
-                "com.google.ios.youtube": 1.0, // 1h current usage
-                "com.apple.mobilesafari": 0.5, // 30m limit (20m current)
-                "com.toyopagroup.picaboo": 0.5, // 30m limit (30m current)
+                "com.burbn.instagram": 2.0, // 2h limit (current: 1h 15m)
+                "com.zhiliaoapp.musically": 1.0, // 1h limit (current: 45m)
+                "com.google.ios.youtube": 1.5, // 1.5h limit (current: 1h)
+                "com.apple.mobilesafari": 0.5, // 30m limit (current: 20m)
+                "com.toyopagroup.picaboo": 1.0, // 1h limit (current: 30m)
+                "com.apple.MobileSMS": 0.5 // 30m limit (current: 15m)
             ]
         )
     }
 }
 // MARK: - END DEMO DATA
-
 extension ChildDevice {
     static var demoDevice: ChildDevice {
         return ChildDevice(
