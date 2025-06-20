@@ -249,8 +249,11 @@ struct GenerateCodeView: View {
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
-        // DEMO DATA - START (Stop pairing listener when code expires)
-        isPairingCompleted = true // This stops the pairing listener
+        // DEMO DATA - START (Stop pairing listener when timer stops)
+        // Only set isPairingCompleted to true if the code actually expired (not when pairing succeeded)
+        if timeRemaining <= 0 {
+            isPairingCompleted = true // This stops the pairing listener only on expiration
+        }
         // DEMO DATA - END
     }
     
@@ -261,6 +264,7 @@ struct GenerateCodeView: View {
     }
     
     // DEMO DATA - START (Listen for pairing completion)
+    // DEMO DATA - START (Listen for pairing completion)
     private func startPairingListener() {
         Task {
             // In demo mode, simulate listening for pairing completion
@@ -270,15 +274,20 @@ struct GenerateCodeView: View {
                 if UserDefaults.standard.bool(forKey: "demoChildPaired_\(pairCode)") {
                     await MainActor.run {
                         isPairingCompleted = true
+                        
                         // DEMO DATA - START (Set child data in UserDefaults for demo)
                         UserDefaults.standard.set("Savir", forKey: "demoChildName")
                         UserDefaults.standard.set("Savir's iPhone", forKey: "demoDeviceName")
+                        UserDefaults.standard.set(true, forKey: "demoChildDevicePaired")
                         // DEMO DATA - END
                         
-                        // Navigate directly to child home by completing onboarding
-                        authManager.isNewSignUp = true
-                        authManager.completeOnboarding()
+                        // Stop the timer since pairing is complete
+                        stopTimer()
                         
+                        // Navigate directly to child home by completing onboarding
+                        authManager.updateChildSetupStatus(isInSetup: false)
+                        authManager.updateDevicePairingStatus(isPaired: true)
+                        authManager.completeOnboarding()
                     }
                     break
                 }

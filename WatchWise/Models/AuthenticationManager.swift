@@ -333,6 +333,12 @@ class AuthenticationManager: ObservableObject {
         }
     }
     
+    // DEMO DATA - START (Methods for managing child setup status)
+    func updateChildSetupStatus(isInSetup: Bool) {
+        self.isChildInSetup = isInSetup
+    }
+    // DEMO DATA - END
+    
     func updateDevicePairingStatus(isPaired: Bool) {
         guard let userId = currentUser?.id else { return }
         
