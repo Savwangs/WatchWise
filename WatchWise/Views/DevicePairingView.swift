@@ -168,6 +168,10 @@ struct DevicePairingView: View {
                     // Update the parent's device pairing status
                     authManager.updateDevicePairingStatus(isPaired: true)
                     
+                    // DEMO DATA - START (Notify child device of successful pairing)
+                    UserDefaults.standard.set(true, forKey: "demoChildPaired_\(pairCode)")
+                    // DEMO DATA - END
+                    
                     alertTitle = "Pairing Successful!"
                     alertMessage = "Successfully connected to \(pairingSuccess.childName)'s device. You can now monitor their screen time."
                     isSuccess = true

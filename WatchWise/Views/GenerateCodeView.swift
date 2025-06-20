@@ -18,6 +18,9 @@ struct GenerateCodeView: View {
     @State private var showNameInput = true
     @State private var showAlert = false
     @State private var alertMessage = ""
+    // DEMO DATA - START (Add pairing status listener for demo flow)
+    @State private var isPairingCompleted = false
+    // DEMO DATA - END
     
     let onCodeGenerated: (String) -> Void
     let onPermissionRequested: () -> Void
@@ -166,18 +169,10 @@ struct GenerateCodeView: View {
             
             Spacer()
             
-            // Continue to Permission (only after code is generated)
-            if isCodeGenerated && !showNameInput {
-                Button(action: {
-                    stopTimer()
-                    onPermissionRequested()
-                }) {
-                    Text("Continue to Permission Setup")
-                        .font(.subheadline)
-                        .foregroundColor(.blue)
-                }
-                .padding(.bottom, 30)
-            }
+            // DEMO DATA - START (Remove continue to permission button for demo mode)
+            // Continue to Permission button removed for demo mode
+            // Will be added back in production
+            // DEMO DATA - END
         }
         .onDisappear {
             stopTimer()
@@ -219,6 +214,9 @@ struct GenerateCodeView: View {
                     timeRemaining = 600 // Reset to 10 minutes
                     onCodeGenerated(code)
                     startTimer()
+                    // DEMO DATA - START (Start listening for pairing completion)
+                    startPairingListener()
+                    // DEMO DATA - END
                     
                 case .failure(let error):
                     alertMessage = error.localizedDescription
@@ -251,6 +249,9 @@ struct GenerateCodeView: View {
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
+        // DEMO DATA - START (Stop pairing listener when code expires)
+        isPairingCompleted = true // This stops the pairing listener
+        // DEMO DATA - END
     }
     
     private func formatTime(_ seconds: Int) -> String {
@@ -258,6 +259,40 @@ struct GenerateCodeView: View {
         let remainingSeconds = seconds % 60
         return String(format: "%02d:%02d", minutes, remainingSeconds)
     }
+    
+    // DEMO DATA - START (Listen for pairing completion)
+    private func startPairingListener() {
+        Task {
+            // In demo mode, simulate listening for pairing completion
+            // In production, this would listen to Firebase for real-time updates
+            while isCodeGenerated && !isPairingCompleted {
+                // Check if pairing was completed by checking demo data
+                if UserDefaults.standard.bool(forKey: "demoChildPaired_\(pairCode)") {
+                    await MainActor.run {
+                        isPairingCompleted = true
+                        // DEMO DATA - START (Set child data in UserDefaults for demo)
+                        UserDefaults.standard.set("Savir", forKey: "demoChildName")
+                        UserDefaults.standard.set("Savir's iPhone", forKey: "demoDeviceName")
+                        // DEMO DATA - END
+                        
+                        // Navigate directly to child home by completing onboarding
+                        authManager.isNewSignUp = true
+                        authManager.completeOnboarding()
+                        
+                    }
+                    break
+                }
+                // Check every 2 seconds
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
+    }
+    // DEMO DATA - END
+    
+    // DEMO DATA - START (Add navigation state for demo flow)
+    @State private var navigateToPermissions = false
+    @EnvironmentObject var authManager: AuthenticationManager
+    // DEMO DATA - END
 }
 
 #Preview {

@@ -35,6 +35,7 @@ class AuthenticationManager: ObservableObject {
     @Published var isLoading = true
     // DEMO DATA - START (Track if user just signed up)
     @Published var isNewSignUp = false
+    @Published var isChildInSetup: Bool = false
     // DEMO DATA - END
     
     private let db = Firestore.firestore()
@@ -267,6 +268,12 @@ class AuthenticationManager: ObservableObject {
                 self?.currentUser = appUser
                 self?.isAuthenticated = true
                 self?.isLoading = false
+
+                // DEMO DATA - START (Reset new signup flag after successful pairing for new users)
+                if self?.isNewSignUp == true && appUser.hasCompletedOnboarding {
+                    self?.isNewSignUp = false
+                }
+                // DEMO DATA - END
             }
         }
     }
@@ -387,6 +394,15 @@ class AuthenticationManager: ObservableObject {
         return currentUser.userType == "Child" &&
                currentUser.hasCompletedOnboarding &&
                !isNewSignUp
+    }
+    // DEMO DATA - END
+    
+    // DEMO DATA - START (Function to mark pairing as completed)
+    func markPairingCompleted() {
+        if isNewSignUp {
+            isNewSignUp = false
+            print("✅ Pairing completed - reset new signup flag")
+        }
     }
     // DEMO DATA - END
 

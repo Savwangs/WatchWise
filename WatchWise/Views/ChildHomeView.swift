@@ -7,281 +7,287 @@
 
 import SwiftUI
 import FirebaseAuth
-import FamilyControls
-import DeviceActivity
-import Foundation
-import FirebaseFirestore
 
 struct ChildHomeView: View {
     @EnvironmentObject var authManager: AuthenticationManager
     @StateObject private var screenTimeDataManager = ScreenTimeDataManager()
-    @StateObject private var pairingManager = PairingManager.shared
-    @State private var currentView: ChildViewState = .generateCode
-    @State private var isPaired = false
-    @State private var devicePairCode: String = ""
-    @State private var isLoading = false
-    @State private var errorMessage: String?
-    @State private var showingError = false
-    
-    enum ChildViewState {
-        case generateCode
-        case permissionRequest
-        case pairedConfirmation
-        case mainInterface
-    }
+    @State private var showSignOutAlert = false
+    @State private var currentScreenTime = "4h 5m"
     
     var body: some View {
-        NavigationStack {
-            VStack {
-                // Header with Sign Out
-                HStack {
-                    Button("Sign Out") {
-                        signOut()
+        TabView {
+            // Dashboard Tab (Main View)
+            NavigationView {
+                ScrollView {
+                    VStack(spacing: 24) {
+                        // Welcome Header
+                        VStack(spacing: 8) {
+                            // DEMO DATA - START (Remove in production)
+                            Text(authManager.isNewSignUp ? "Connection Successful!" : "Welcome back, Savir!")
+                                .font(.title)
+                                .fontWeight(.bold)
+                                .padding(.top, 20)
+                            
+                            Text("Today's Screen Time")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            // DEMO DATA - END (Remove in production)
+                            
+                            /* PRODUCTION CODE - Uncomment when ready for production
+                            Text("Welcome back, \(authManager.currentUser?.name ?? "")!")
+                                .font(.title)
+                                .fontWeight(.bold)
+                                .padding(.top, 20)
+                            
+                            Text("Today's Screen Time")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            */
+                        }
+                        
+                        // Screen Time Card
+                        VStack(spacing: 16) {
+                            Text(currentScreenTime)
+                                .font(.system(size: 48, weight: .bold, design: .rounded))
+                                .foregroundColor(.blue)
+                            
+                            HStack {
+                                Image(systemName: "clock.fill")
+                                    .foregroundColor(.blue)
+                                Text("Total time today")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 32)
+                        .padding(.horizontal, 24)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(16)
+                        
+                        // Top Apps Section
+                        VStack(alignment: .leading, spacing: 16) {
+                            HStack {
+                                Text("Top 3 Most Used Apps")
+                                    .font(.headline)
+                                    .fontWeight(.semibold)
+                                Spacer()
+                            }
+                            
+                            // DEMO DATA - START (Remove in production)
+                            AppUsageRow(appName: "Instagram", duration: "1h 15m", icon: "camera.fill", color: .pink)
+                            AppUsageRow(appName: "Youtube", duration: "1h", icon: "play.rectangle.fill", color: .red)
+                            AppUsageRow(appName: "TikTok", duration: "45m", icon: "music.note", color: .black)
+                            // DEMO DATA - END (Remove in production)
+                            
+                            /* PRODUCTION CODE - Uncomment when ready for production
+                            ForEach(screenTimeDataManager.topApps, id: \.id) { app in
+                                AppUsageRow(
+                                    appName: app.name,
+                                    duration: formatDuration(app.duration),
+                                    icon: app.icon,
+                                    color: app.color
+                                )
+                            }
+                            */
+                        }
+                        .padding(.horizontal, 4)
+                        
+                        // Connection Status
+                        HStack {
+                            Image(systemName: "link.circle.fill")
+                                .foregroundColor(.green)
+                            // DEMO DATA - START (Remove in production)
+                            Text("Connected to Parent Device")
+                            // DEMO DATA - END (Remove in production)
+                            
+                            /* PRODUCTION CODE - Uncomment when ready for production
+                            Text("Connected to \(authManager.parentDeviceName ?? "Parent Device")")
+                            */
+                            
+                            Spacer()
+                            
+                            Text("Active")
+                                .font(.caption)
+                                .foregroundColor(.green)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.green.opacity(0.2))
+                                .cornerRadius(6)
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
                     }
-                    .foregroundColor(.blue)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 20)
+                }
+                .navigationBarHidden(true)
+            }
+            .tabItem {
+                Image(systemName: "house.fill")
+                Text("Dashboard")
+            }
+            
+            // Messages Tab
+            NavigationView {
+                VStack(spacing: 20) {
+                    Text("Messages from Parent")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .padding(.top, 20)
+                    
+                    // Messages List
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            // DEMO DATA - START (Remove in production)
+                            MessageRow(
+                                message: "Great job keeping your screen time low today! 👏",
+                                timestamp: "2 hours ago",
+                                isFromParent: true
+                            )
+                            
+                            MessageRow(
+                                message: "Don't forget to take breaks between study sessions",
+                                timestamp: "Yesterday",
+                                isFromParent: true
+                            )
+                            // DEMO DATA - END (Remove in production)
+                            
+                            /* PRODUCTION CODE - Uncomment when ready for production
+                            ForEach(messagesManager.messages, id: \.id) { message in
+                                MessageRow(
+                                    message: message.content,
+                                    timestamp: message.formattedDate,
+                                    isFromParent: message.isFromParent
+                                )
+                            }
+                            */
+                        }
+                        .padding(.horizontal, 20)
+                    }
                     
                     Spacer()
-                    
-                    // Connection status indicator
-                    if isPaired {
+                }
+                .navigationBarHidden(true)
+            }
+            .tabItem {
+                Image(systemName: "message.fill")
+                Text("Messages")
+            }
+            
+            // Settings Tab
+            NavigationView {
+                List {
+                    Section("Device Connection") {
                         HStack {
+                            Image(systemName: "iphone")
+                                .foregroundColor(.blue)
+                            VStack(alignment: .leading, spacing: 4) {
+                                // DEMO DATA - START (Remove in production)
+                                Text("Savir's iPhone")
+                                    .font(.body)
+                                Text("Connected to Parent Device")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                // DEMO DATA - END (Remove in production)
+                                
+                                /* PRODUCTION CODE - Uncomment when ready for production
+                                Text(authManager.currentUser?.deviceName ?? "This Device")
+                                    .font(.body)
+                                Text("Connected to \(authManager.parentDeviceName ?? "Parent Device")")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                */
+                            }
+                            Spacer()
+                            
                             Circle()
                                 .fill(Color.green)
                                 .frame(width: 8, height: 8)
-                            Text("Connected")
-                                .font(.caption)
-                                .foregroundColor(.green)
+                        }
+                        .padding(.vertical, 8)
+                    }
+                    
+                    Section("Account") {
+                        HStack {
+                            Image(systemName: "person.circle.fill")
+                                .foregroundColor(.gray)
+                            // DEMO DATA - START (Remove in production)
+                            Text("Savir")
+                            // DEMO DATA - END (Remove in production)
+                            
+                            /* PRODUCTION CODE - Uncomment when ready for production
+                            Text(authManager.currentUser?.name ?? "Child User")
+                            */
+                        }
+                        
+                        Button(action: {
+                            showSignOutAlert = true
+                        }) {
+                            HStack {
+                                Image(systemName: "rectangle.portrait.and.arrow.right")
+                                    .foregroundColor(.red)
+                                Text("Sign Out")
+                                    .foregroundColor(.red)
+                            }
+                        }
+                    }
+                    
+                    Section("Privacy & Support") {
+                        NavigationLink(destination: PrivacyPolicyView()) {
+                            Label("Privacy Policy", systemImage: "hand.raised.fill")
+                        }
+                        
+                        NavigationLink(destination: ChildSupportView()) {
+                            Label("Help & Support", systemImage: "questionmark.circle.fill")
                         }
                     }
                 }
-                .padding(.horizontal)
-                .padding(.top, 10)
-                
-                // Error Alert
-                if let errorMessage = errorMessage {
-                    ErrorBanner(
-                        message: errorMessage,
-                        onDismiss: { self.errorMessage = nil }
-                    )
-                }
-                
-                // Content based on current state
-                currentViewContent
-                
-                Spacer()
+                .navigationTitle("Settings")
+                .navigationBarTitleDisplayMode(.large)
             }
-            .navigationBarHidden(true)
-            .alert("Error", isPresented: $showingError) {
-                Button("OK") {
-                    errorMessage = nil
-                    showingError = false
-                }
-            } message: {
-                Text(errorMessage ?? "An unknown error occurred")
+            .tabItem {
+                Image(systemName: "gear")
+                Text("Settings")
             }
+        }
+        .alert("Sign Out", isPresented: $showSignOutAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Sign Out", role: .destructive) {
+                signOut()
+            }
+        } message: {
+            Text("Are you sure you want to sign out? This will disconnect your device from your parent.")
         }
         .onAppear {
-            checkInitialState()
-        }
-        .onChange(of: pairingManager.isPaired) { oldValue, newValue in
-            isPaired = newValue
-            if newValue && currentView == .generateCode {
-                currentView = .pairedConfirmation
-            }
-        }
-        .onChange(of: errorMessage) { oldValue, newValue in
-            showingError = newValue != nil
+            updateScreenTime()
         }
     }
     
-    @ViewBuilder
-    private var currentViewContent: some View {
-        switch currentView {
-        case .generateCode:
-            GenerateCodeView(
-                onCodeGenerated: handleCodeGenerated,
-                onPermissionRequested: {
-                    currentView = .permissionRequest
-                }
-            )
-        case .permissionRequest:
-            PermissionRequestView(
-                onPermissionGranted: handlePermissionGranted
-            )
-        case .pairedConfirmation:
-            PairedConfirmationView(
-                isPaired: isPaired
-            )
-        case .mainInterface:
-            ChildMainInterface(
-                screenTimeManager: screenTimeDataManager,
-                onUnpair: handleUnpair
-            )
-        }
-    }
-    
-    // MARK: - Methods
-    
-    private func checkInitialState() {
-        // Check if already paired
-        if pairingManager.isPaired {
-            isPaired = true
-            currentView = screenTimeDataManager.isAuthorized ? .mainInterface : .permissionRequest
-        }
+    private func updateScreenTime() {
+        // DEMO DATA - START (Remove in production)
+        // Use demo data from ScreenTimeData for consistency
+        let demoData = ScreenTimeData.demoData
+        let hours = Int(demoData.totalScreenTime) / 3600
+        let minutes = Int(demoData.totalScreenTime) % 3600 / 60
+        currentScreenTime = hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
+        // DEMO DATA - END (Remove in production)
         
-        // Check Screen Time authorization
-        screenTimeDataManager.checkAuthorizationStatus()
-    }
-    
-    private func handleCodeGenerated(code: String) {
-        devicePairCode = code
+        /* PRODUCTION CODE - Uncomment when ready for production
         Task {
-            await waitForPairing(code: code)
-        }
-    }
-    
-    private func waitForPairing(code: String) async {
-        await MainActor.run {
-            isLoading = true
-        }
-        
-        do {
-            // Wait for parent to use the code for pairing
-            let success = await waitForPairingComplete(code: code, timeout: 600)
-            
-            await MainActor.run {
-                isLoading = false
-                if success {
-                    isPaired = true
-                    currentView = screenTimeDataManager.isAuthorized ? .pairedConfirmation : .permissionRequest
-                } else {
-                    errorMessage = "Pairing timed out. Please generate a new code."
+            if let userId = authManager.currentUser?.id {
+                let screenTimeData = try await databaseManager.getScreenTimeData(for: userId, date: Date())
+                await MainActor.run {
+                    let hours = Int(screenTimeData.totalScreenTime) / 3600
+                    let minutes = Int(screenTimeData.totalScreenTime) % 3600 / 60
+                    currentScreenTime = hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
                 }
             }
-        } catch {
-            await MainActor.run {
-                isLoading = false
-                errorMessage = "Pairing failed: \(error.localizedDescription)"
-            }
         }
-    }
-    
-    private func handlePermissionGranted() {
-        Task {
-            await requestScreenTimePermission()
-        }
-    }
-    
-    private func requestScreenTimePermission() async {
-        await screenTimeDataManager.requestAuthorization()
-        
-        await MainActor.run {
-            if screenTimeDataManager.isAuthorized {
-                // Start screen time monitoring
-                Task {
-                    await startScreenTimeMonitoring()
-                }
-                
-                // Mark onboarding as complete
-                authManager.completeOnboarding()
-                
-                // Move to confirmation screen
-                currentView = .pairedConfirmation
-            } else {
-                errorMessage = "Screen Time permission is required for the app to work properly."
-            }
-        }
-    }
-    
-    private func startScreenTimeMonitoring() async {
-        guard let deviceId = pairingManager.currentDeviceId else {
-            await MainActor.run {
-                errorMessage = "Device ID not found. Please try pairing again."
-            }
-            return
-        }
-        
-        await screenTimeDataManager.startScreenTimeMonitoring(for: deviceId)
-        
-        // Set up real-time updates
-        await MainActor.run {
-            screenTimeDataManager.setupRealtimeUpdates(for: deviceId)
-        }
-    }
-    
-    private func handlePermissionDenied() {
-        errorMessage = "Screen Time permission is required for the app to function. Please grant permission in Settings."
-    }
-    
-    private func handleUnpair() {
-        Task {
-            await unpairDevice()
-        }
-    }
-    
-    private func unpairDevice() async {
-        guard let deviceId = pairingManager.currentDeviceId else { return }
-        
-        await MainActor.run {
-            isLoading = true
-        }
-        
-        do {
-            // Stop screen time monitoring
-            screenTimeDataManager.stopMonitoring(for: deviceId)
-            
-            // Unpair from backend
-            let _ = await pairingManager.unpairChild(relationshipId: deviceId)
-            
-            await MainActor.run {
-                isLoading = false
-                isPaired = false
-                currentView = .generateCode
-                
-                // Clear onboarding status
-                authManager.updateOnboardingStatus(false)
-            }
-        } catch {
-            await MainActor.run {
-                isLoading = false
-                errorMessage = "Failed to unpair device: \(error.localizedDescription)"
-            }
-        }
-    }
-    
-    private func waitForPairingComplete(code: String, timeout: TimeInterval) async -> Bool {
-        let startTime = Date()
-        
-        while Date().timeIntervalSince(startTime) < timeout {
-            // Check if pairing is complete by querying Firestore
-            do {
-                let db = Firestore.firestore()
-                let snapshot = try await db.collection("pairingRequests")
-                    .whereField("pairCode", isEqualTo: code)
-                    .whereField("isActive", isEqualTo: true)
-                    .getDocuments()
-                
-                if !snapshot.documents.isEmpty {
-                    return true
-                }
-                
-                // Wait 2 seconds before checking again
-                try await Task.sleep(nanoseconds: 2_000_000_000)
-            } catch {
-                print("Error checking pairing status: \(error)")
-                return false
-            }
-        }
-        
-        return false
+        */
     }
     
     private func signOut() {
-        // Stop any ongoing monitoring
-        if let deviceId = pairingManager.currentDeviceId {
-            screenTimeDataManager.stopMonitoring(for: deviceId)
-        }
-        
         // Clear user defaults
         UserDefaults.standard.removeObject(forKey: "isChildMode")
         UserDefaults.standard.removeObject(forKey: "userType")
@@ -289,260 +295,124 @@ struct ChildHomeView: View {
         
         // Sign out from Firebase
         authManager.signOut()
-        
-        // Reset state
-        isPaired = false
-        currentView = .generateCode
     }
 }
 
-// MARK: - Error Banner
-struct ErrorBanner: View {
-    let message: String
-    let onDismiss: () -> Void
-    
-    var body: some View {
-        HStack {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundColor(.red)
-            
-            Text(message)
-                .font(.subheadline)
-                .foregroundColor(.red)
-                .multilineTextAlignment(.leading)
-            
-            Spacer()
-            
-            Button("✕", action: onDismiss)
-                .foregroundColor(.red)
-        }
-        .padding()
-        .background(Color.red.opacity(0.1))
-        .cornerRadius(8)
-        .padding(.horizontal)
-    }
-}
+// MARK: - Supporting Views
 
-// MARK: - Privacy Item
-struct PrivacyItem: View {
+struct AppUsageRow: View {
+    let appName: String
+    let duration: String
     let icon: String
-    let text: String
-    let isNegative: Bool
-    
-    init(icon: String, text: String, isNegative: Bool = false) {
-        self.icon = icon
-        self.text = text
-        self.isNegative = isNegative
-    }
+    let color: Color
     
     var body: some View {
-        HStack {
-            Image(systemName: isNegative ? "xmark.circle" : "checkmark.circle")
-                .foregroundColor(isNegative ? .red : .green)
-            
+        HStack(spacing: 12) {
             Image(systemName: icon)
-                .foregroundColor(.secondary)
-                .frame(width: 20)
+                .foregroundColor(color)
+                .frame(width: 24, height: 24)
             
-            Text(text)
-                .font(.subheadline)
-                .foregroundColor(.primary)
-            
-            Spacer()
-        }
-    }
-}
-
-// MARK: - Feature Item
-struct FeatureItem: View {
-    let icon: String
-    let text: String
-    
-    var body: some View {
-        HStack {
-            Image(systemName: icon)
-                .foregroundColor(.blue)
-                .frame(width: 20)
-            
-            Text(text)
-                .font(.subheadline)
-            
-            Spacer()
-        }
-    }
-}
-
-// MARK: - Child Main Interface
-struct ChildMainInterface: View {
-    let screenTimeManager: ScreenTimeDataManager
-    let onUnpair: () -> Void
-    
-    @State private var showingSettings = false
-    
-    var body: some View {
-        TabView {
-            // Home Tab
-            ChildDashboardTab(screenTimeManager: screenTimeManager)
-                .tabItem {
-                    Image(systemName: "house.fill")
-                    Text("Home")
-                }
-            
-            // Messages Tab
-            ChildMessagesTab()
-                .tabItem {
-                    Image(systemName: "message.fill")
-                    Text("Messages")
-                }
-            
-            // Settings Tab
-            ChildSettingsTab(onUnpair: onUnpair)
-                .tabItem {
-                    Image(systemName: "gear")
-                    Text("Settings")
-                }
-        }
-    }
-}
-
-// MARK: - Child Dashboard Tab
-struct ChildDashboardTab: View {
-    let screenTimeManager: ScreenTimeDataManager
-    
-    var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Current Screen Time
-                    if let screenTimeData = screenTimeManager.currentScreenTimeData {
-                        VStack(spacing: 16) {
-                            Text("Today's Screen Time")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                            
-                            Text(screenTimeManager.formatDuration(screenTimeData.totalScreenTime))
-                                .font(.largeTitle)
-                                .fontWeight(.bold)
-                                .foregroundColor(.blue)
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(12)
-                        
-                        // Top Apps
-                        if !screenTimeData.appUsages.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Most Used Apps")
-                                    .font(.headline)
-                                
-                                ForEach(Array(screenTimeData.appUsages.prefix(3).enumerated()), id: \.offset) { index, usage in
-                                    HStack {
-                                        Text("\(index + 1)")
-                                            .font(.caption)
-                                            .foregroundColor(.white)
-                                            .frame(width: 20, height: 20)
-                                            .background(Color.blue)
-                                            .clipShape(Circle())
-                                        
-                                        Text(usage.appName)
-                                            .font(.body)
-                                        
-                                        Spacer()
-                                        
-                                        Text(screenTimeManager.formatDuration(usage.duration))
-                                            .font(.subheadline)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                            }
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .cornerRadius(12)
-                        }
-                    } else {
-                        VStack(spacing: 16) {
-                            ProgressView()
-                            Text("Loading your screen time data...")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(height: 200)
-                    }
-                }
-                .padding()
-            }
-            .navigationTitle("My Usage")
-        }
-    }
-}
-
-// MARK: - Child Messages Tab
-struct ChildMessagesTab: View {
-    var body: some View {
-        NavigationView {
-            VStack {
-                Text("Messages from Parent")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(appName)
+                    .font(.body)
+                    .fontWeight(.medium)
                 
-                Text("No new messages")
-                    .font(.title2)
+                Text(duration)
+                    .font(.caption)
                     .foregroundColor(.secondary)
-                    .padding(.top, 50)
+            }
+            
+            Spacer()
+            
+            // Simple usage bar
+            Rectangle()
+                .fill(color.opacity(0.3))
+                .frame(width: 40, height: 4)
+                .cornerRadius(2)
+        }
+        .padding(.vertical, 8)
+    }
+}
+
+struct MessageRow: View {
+    let message: String
+    let timestamp: String
+    let isFromParent: Bool
+    
+    var body: some View {
+        HStack {
+            if isFromParent {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Image(systemName: "person.circle.fill")
+                            .foregroundColor(.blue)
+                        Text("Parent")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.blue)
+                        Spacer()
+                        Text(timestamp)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Text(message)
+                        .font(.body)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(12)
+                }
+                Spacer(minLength: 50)
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+}
+
+// MARK: - Placeholder Views
+
+struct PrivacyPolicyView: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Privacy Policy")
+                    .font(.title)
+                    .fontWeight(.bold)
+                
+                Text("Your privacy is important to us. This app only collects screen time data necessary for parental monitoring.")
+                    .font(.body)
+                
+                Text("We do not share your data with third parties and all data is encrypted.")
+                    .font(.body)
                 
                 Spacer()
             }
-            .navigationTitle("Messages")
+            .padding()
         }
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
-// MARK: - Child Settings Tab
-struct ChildSettingsTab: View {
-    let onUnpair: () -> Void
-    
+struct ChildSupportView: View {
     var body: some View {
-        NavigationView {
-            List {
-                Section("Connection") {
-                    HStack {
-                        Image(systemName: "link")
-                            .foregroundColor(.green)
-                        Text("Connected to Parent")
-                        Spacer()
-                        Text("Active")
-                            .font(.caption)
-                            .foregroundColor(.green)
-                    }
-                    
-                    Button("Disconnect Device") {
-                        onUnpair()
-                    }
-                    .foregroundColor(.red)
-                }
-                
-                Section("Privacy") {
-                    NavigationLink("Privacy Policy") {
-                        Text("Privacy Policy Content")
-                    }
-                    
-                    NavigationLink("Data Usage") {
-                        Text("Data Usage Information")
-                    }
-                }
-                
-                Section("Support") {
-                    NavigationLink("Help & Support") {
-                        Text("Help Content")
-                    }
-                    
-                    NavigationLink("Contact Us") {
-                        Text("Contact Information")
-                    }
+        List {
+            Section("Get Help") {
+                Link("Email Support", destination: URL(string: "mailto:support@watchwise.com")!)
+                Link("User Guide", destination: URL(string: "https://watchwise.com/help")!)
+            }
+            
+            Section("App Info") {
+                HStack {
+                    Text("Version")
+                    Spacer()
+                    Text("1.0.0")
+                        .foregroundColor(.secondary)
                 }
             }
-            .navigationTitle("Settings")
         }
+        .navigationTitle("Support")
+        .navigationBarTitleDisplayMode(.large)
     }
 }
 

@@ -80,7 +80,12 @@ struct ChildHomeContentView: View {
                             devicePairCode = code
                         },
                         onPermissionRequested: {
-                            currentView = .permissionRequest
+                            // DEMO DATA - START (Skip permission screen and go directly to child home)
+                            currentView = .pairedConfirmation
+                            isPaired = true
+                            authManager.completeOnboarding()
+                            // DEMO DATA - END
+
                         }
                     )
                     
@@ -94,9 +99,7 @@ struct ChildHomeContentView: View {
                     )
                     
                 case .pairedConfirmation:
-                    PairedConfirmationView(
-                        isPaired: isPaired
-                    )
+                    ChildHomeView()
                 }
                 
                 Spacer()
@@ -108,6 +111,14 @@ struct ChildHomeContentView: View {
                 isPaired = true
                 currentView = .pairedConfirmation
             }
+        }
+        .onChange(of: authManager.hasCompletedOnboarding) { completed in
+            // DEMO DATA - START (Listen for onboarding completion and navigate to child home)
+            if completed {
+                isPaired = true
+                currentView = .pairedConfirmation
+            }
+            // DEMO DATA - END
         }
     }
 }
