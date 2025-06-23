@@ -11,12 +11,12 @@ import FirebaseAuth
 // DEMO DATA START - Extended app usage data to include Messages
 extension ScreenTimeManager {
     static let demoAppUsages: [AppUsage] = [
-        AppUsage(appName: "Instagram", bundleIdentifier: "com.burbn.instagram", duration: 4500, timestamp: Date().addingTimeInterval(-3600)), // 1h 15m
-        AppUsage(appName: "TikTok", bundleIdentifier: "com.zhiliaoapp.musically", duration: 2700, timestamp: Date().addingTimeInterval(-7200)), // 45m
-        AppUsage(appName: "YouTube", bundleIdentifier: "com.google.ios.youtube", duration: 3600, timestamp: Date().addingTimeInterval(-5400)), // 1h
-        AppUsage(appName: "Safari", bundleIdentifier: "com.apple.mobilesafari", duration: 1200, timestamp: Date().addingTimeInterval(-1800)), // 20m
-        AppUsage(appName: "Snapchat", bundleIdentifier: "com.toyopagroup.picaboo", duration: 1800, timestamp: Date().addingTimeInterval(-900)), // 30m
-        AppUsage(appName: "Messages", bundleIdentifier: "com.apple.MobileSMS", duration: 900, timestamp: Date().addingTimeInterval(-600)) // 15m
+        AppUsage(appName: "Instagram", bundleIdentifier: "com.burbn.instagram", duration: 4500, timestamp: Date().addingTimeInterval(-3600)), // 1h 15m (30m + 45m from graph)
+        AppUsage(appName: "TikTok", bundleIdentifier: "com.zhiliaoapp.musically", duration: 2700, timestamp: Date().addingTimeInterval(-7200)), // 45m (matches graph)
+        AppUsage(appName: "YouTube", bundleIdentifier: "com.google.ios.youtube", duration: 3600, timestamp: Date().addingTimeInterval(-5400)), // 1h (20m + 40m from graph)
+        AppUsage(appName: "Snapchat", bundleIdentifier: "com.toyopagroup.picaboo", duration: 1800, timestamp: Date().addingTimeInterval(-900)), // 30m (matches graph)
+        AppUsage(appName: "Safari", bundleIdentifier: "com.apple.mobilesafari", duration: 1200, timestamp: Date().addingTimeInterval(-1800)), // 20m (matches graph)
+        AppUsage(appName: "Messages", bundleIdentifier: "com.apple.MobileSMS", duration: 900, timestamp: Date().addingTimeInterval(-600)) // 15m (matches graph)
     ]
 }
 // DEMO DATA END
@@ -120,7 +120,7 @@ struct HeaderView: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading) {
-                Text("Your Child's Usage Today")
+                Text("Savir's Usage Today")
                     .font(.title2)
                     .fontWeight(.bold)
                 
@@ -416,34 +416,34 @@ struct HourlyBreakdownCard: View {
     ]
     // DEMO DATA END
     
-    // DEMO DATA START - Time-based usage data for chart
-    private var timeBasedAppData: [(timeRange: String, apps: [(appName: String, duration: TimeInterval)])] {
+    // DEMO DATA START - Enhanced time-based usage data with specific time ranges for hover tooltips
+    private var timeBasedAppData: [(timeRange: String, apps: [(appName: String, duration: TimeInterval, timeRanges: [(start: String, end: String)])])] {
         return [
             (timeRange: "12a", apps: []),
             (timeRange: "4a", apps: []),
             (timeRange: "8a", apps: [
-                (appName: "Instagram", duration: 1800) // 30m
+                (appName: "Instagram", duration: 1800, timeRanges: [("8:05 AM", "8:35 AM")]) // 30m
             ]),
             (timeRange: "12p", apps: [
-                (appName: "TikTok", duration: 2700),    // 45m
-                (appName: "YouTube", duration: 3600),   // 1h
-                (appName: "Safari", duration: 1200)     // 20m
+                (appName: "TikTok", duration: 2700, timeRanges: [("12:05 PM", "12:22 PM"), ("12:50 PM", "1:18 PM")]), // 45m total
+                (appName: "YouTube", duration: 3600, timeRanges: [("12:25 PM", "12:45 PM"), ("1:20 PM", "2:00 PM")]), // 1h total
+                (appName: "Safari", duration: 1200, timeRanges: [("2:00 PM", "2:20 PM")]) // 20m
             ]),
             (timeRange: "4p", apps: [
-                (appName: "Instagram", duration: 2700), // 45m
-                (appName: "Snapchat", duration: 1800)   // 30m
+                (appName: "Instagram", duration: 2700, timeRanges: [("4:15 PM", "5:00 PM")]), // 45m total
+                (appName: "Snapchat", duration: 1800, timeRanges: [("5:15 PM", "5:45 PM")]) // 30m
             ]),
             (timeRange: "8p", apps: [
-                (appName: "Messages", duration: 900)    // 15m
+                (appName: "Messages", duration: 900, timeRanges: [("8:15 PM", "8:30 PM")]) // 15m
             ]),
             (timeRange: "11:59p", apps: [])
         ]
     }
     // DEMO DATA END
     
-    // DEMO DATA START - Flattened data for Chart performance
-    private var flattenedTimeData: [(id: String, timeRange: String, appName: String, duration: TimeInterval)] {
-        var result: [(id: String, timeRange: String, appName: String, duration: TimeInterval)] = []
+    // DEMO DATA START - Flattened data for Chart performance with time ranges
+    private var flattenedTimeData: [(id: String, timeRange: String, appName: String, duration: TimeInterval, timeRanges: [(start: String, end: String)])] {
+        var result: [(id: String, timeRange: String, appName: String, duration: TimeInterval, timeRanges: [(start: String, end: String)])] = []
         
         for timeData in timeBasedAppData {
             for (index, app) in timeData.apps.enumerated() {
@@ -451,7 +451,8 @@ struct HourlyBreakdownCard: View {
                     id: "\(timeData.timeRange)-\(app.appName)-\(index)",
                     timeRange: timeData.timeRange,
                     appName: app.appName,
-                    duration: app.duration
+                    duration: app.duration,
+                    timeRanges: app.timeRanges
                 ))
             }
         }
@@ -462,6 +463,98 @@ struct HourlyBreakdownCard: View {
     
     @State private var selectedHour: Int? = nil
     @State private var hoveredData: (hour: Int, apps: [String: TimeInterval])? = nil
+    // ADD THESE NEW STATE VARIABLES:
+    @State private var hoveredApp: String? = nil
+    @State private var hoveredTimeRanges: [(start: String, end: String)] = []
+    @State private var hoveredTotalDuration: TimeInterval = 0
+    @State private var hoverPosition: CGPoint = .zero
+    
+    // DEMO DATA START - Helper functions for hover tooltip functionality
+    private func getAppDataForTimeRange(_ timeRange: String, appName: String) -> (timeRanges: [(start: String, end: String)], totalDuration: TimeInterval) {
+        guard let timeData = timeBasedAppData.first(where: { $0.timeRange == timeRange }),
+              let appData = timeData.apps.first(where: { $0.appName == appName }) else {
+            return (timeRanges: [], totalDuration: 0)
+        }
+        return (timeRanges: appData.timeRanges, totalDuration: appData.duration)
+    }
+
+    private func formatTimeRanges(_ timeRanges: [(start: String, end: String)], appName: String, totalDuration: TimeInterval) -> String {
+        let formattedRanges = timeRanges.map { "\($0.start) – \($0.end)" }.joined(separator: "\n")
+        let totalFormatted = formatDuration(totalDuration)
+        return "\(appName) Usage\n\n\(formattedRanges)\n(Total: \(totalFormatted))"
+    }
+    // DEMO DATA END
+    
+    // DEMO DATA START - Hover handling functions
+    private func handleHover(at location: CGPoint, geometry: GeometryProxy, chartProxy: ChartProxy) {
+        hoverPosition = location
+        
+        // Get all time ranges that have data
+        let timeRangesWithData = timeBasedAppData.filter { !$0.apps.isEmpty }
+        guard !timeRangesWithData.isEmpty else { return }
+        
+        // Calculate which time range was hovered
+        let chartWidth = geometry.size.width
+        let timeRangeWidth = chartWidth / CGFloat(timeRangesWithData.count)
+        let timeRangeIndex = Int(location.x / timeRangeWidth)
+        
+        guard timeRangeIndex >= 0 && timeRangeIndex < timeRangesWithData.count else {
+            clearHover()
+            return
+        }
+        
+        let timeData = timeRangesWithData[timeRangeIndex]
+        
+        // Calculate which app segment was hovered based on Y position
+        let chartHeight = geometry.size.height
+        let yFromBottom = chartHeight - location.y // Convert to bottom-up coordinate
+        
+        // Calculate the total duration for this time range
+        let totalDuration = timeData.apps.reduce(0) { $0 + $1.duration }
+        let maxMinutes: CGFloat = 120 // 2 hours max on Y-axis
+        let scaleFactor = chartHeight / maxMinutes
+        
+        // Calculate cumulative heights from bottom up
+        var cumulativeMinutes: CGFloat = 0
+        
+        for app in timeData.apps {
+            let appMinutes = CGFloat(app.duration / 60.0)
+            let nextCumulativeMinutes = cumulativeMinutes + appMinutes
+            
+            // Check if hover is within this app's segment
+            if yFromBottom >= cumulativeMinutes * scaleFactor && yFromBottom <= nextCumulativeMinutes * scaleFactor {
+                let appData = getAppDataForTimeRange(timeData.timeRange, appName: app.appName)
+                hoveredApp = app.appName
+                hoveredTimeRanges = appData.timeRanges
+                hoveredTotalDuration = appData.totalDuration
+                return
+            }
+            
+            cumulativeMinutes = nextCumulativeMinutes
+        }
+        
+        // If no app segment was found, clear hover
+        clearHover()
+    }
+
+    private func clearHover() {
+        hoveredApp = nil
+        hoveredTimeRanges = []
+        hoveredTotalDuration = 0
+    }
+    // DEMO DATA END
+    
+    // DEMO DATA START - Tap handling for iOS touch devices
+    private func handleTap(at location: CGPoint, geometry: GeometryProxy, chartProxy: ChartProxy) {
+        if hoveredApp != nil {
+            // If tooltip is already showing, clear it
+            clearHover()
+        } else {
+            // Show tooltip by using same logic as hover
+            handleHover(at: location, geometry: geometry, chartProxy: chartProxy)
+        }
+    }
+    // DEMO DATA END
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -487,6 +580,7 @@ struct HourlyBreakdownCard: View {
                         )
                         .foregroundStyle(appColors[data.appName] ?? .gray)
                         .cornerRadius(4)
+                        .opacity(hoveredApp == nil || hoveredApp == data.appName ? 1.0 : 0.3)
                     }
                     .frame(height: 200)
                     .chartXAxis {
@@ -529,11 +623,47 @@ struct HourlyBreakdownCard: View {
                                 .fill(Color.clear)
                                 .contentShape(Rectangle())
                                 .onTapGesture { location in
-                                    // Tap gesture preserved for future functionality
-                                    selectedHour = selectedHour == nil ? 0 : nil
+                                    handleTap(at: location, geometry: geometry, chartProxy: chartProxy)
+                                }
+                                .onContinuousHover { phase in
+                                    switch phase {
+                                    case .active(let location):
+                                        handleHover(at: location, geometry: geometry, chartProxy: chartProxy)
+                                    case .ended:
+                                        clearHover()
+                                    }
                                 }
                         }
                     }
+                    .overlay(
+                        // Hover/Tap tooltip
+                        Group {
+                            if let app = hoveredApp, !hoveredTimeRanges.isEmpty {
+                                GeometryReader { overlayGeometry in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(formatTimeRanges(hoveredTimeRanges, appName: app, totalDuration: hoveredTotalDuration))
+                                            .font(.caption)
+                                            .foregroundColor(.primary)
+                                            .multilineTextAlignment(.leading)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                    .padding(10)
+                                    .background(Color(.systemBackground))
+                                    .cornerRadius(8)
+                                    .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
+                                    .position(
+                                        x: min(max(hoverPosition.x, 100), overlayGeometry.size.width - 100),
+                                        y: max(hoverPosition.y - 60, 40)
+                                    )
+                                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                                    .animation(.easeInOut(duration: 0.15), value: hoveredApp)
+                                    .onTapGesture {
+                                        clearHover() // Tap tooltip to dismiss
+                                    }
+                                }
+                            }
+                        }
+                    )
                 } else {
                     VStack(spacing: 8) {
                         Text("App usage breakdown:")

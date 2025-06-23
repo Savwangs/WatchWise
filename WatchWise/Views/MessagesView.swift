@@ -104,7 +104,7 @@ struct MessagesView: View {
                 .fill(pairedDevices.isEmpty ? Color.red : Color.green)
                 .frame(width: 8, height: 8)
             
-            Text(pairedDevices.isEmpty ? "Not Connected" : "Connected")
+            Text("Connected") //pairedDevices.isEmpty ? "Not Connected" :
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -226,7 +226,7 @@ struct MessagesView: View {
     // MARK: - Functions
     private func setupMessaging() async {
         await loadPairedDevices()
-        
+        /* PRODUCTION CODE - UNCOMMENT WHEN READY FOR PRODUCTION
         if let userId = authManager.currentUser?.id {
             do {
                 try await messagingManager.retrieveFCMToken(for: userId, deviceType: .parent)
@@ -240,9 +240,31 @@ struct MessagesView: View {
                 }
             }
         }
+         */
     }
     
     private func loadPairedDevices() async {
+        
+        // === DEMO DATA START ===
+        // Creating mock paired device data for demo mode
+        let mockDevice = ChildDevice(
+            id: "demo-device-id",
+            childName: "Savir",
+            deviceName: "Savir's iPhone",
+            pairCode: "123456",
+            parentId: "demo-parent-id",
+            pairedAt: Timestamp(date: Date().addingTimeInterval(-86400)), // Paired yesterday
+            isActive: true
+        )
+            
+        await MainActor.run {
+            self.pairedDevices = [mockDevice]
+            if self.selectedDevice == nil {
+                self.selectedDevice = mockDevice
+            }
+        }
+        // === DEMO DATA END ===
+        /*
         guard let parentId = authManager.currentUser?.id else { return }
         
         do {
@@ -269,6 +291,7 @@ struct MessagesView: View {
                 showAlert = true
             }
         }
+        */
     }
     
     private func loadMessageHistory() async {

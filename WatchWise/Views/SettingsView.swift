@@ -374,6 +374,13 @@ struct SettingsView: View {
     private func saveAlertSettings() {
         guard let userId = authManager.currentUser?.id else { return }
         
+        // DEMO DATA - START (Remove in production)
+        // In demo mode, just simulate successful save without Firebase call
+        print("✅ Alert settings saved successfully (DEMO MODE)")
+        return
+        // DEMO DATA - END (Remove in production)
+        
+        /* PRODUCTION CODE - Uncomment when ready for production
         do {
             let encoder = JSONEncoder()
             let data = try encoder.encode(alertSettings)
@@ -395,6 +402,7 @@ struct SettingsView: View {
         } catch {
             showErrorMessage("Failed to encode alert settings")
         }
+        */
     }
     
     // MARK: - Error Handling
