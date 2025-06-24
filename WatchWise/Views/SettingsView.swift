@@ -86,6 +86,11 @@ struct SettingsView: View {
                                         Spacer()
                                         NavigationLink("Add Device") {
                                             DevicePairingView()
+                                                .onDisappear {
+                                                    Task {
+                                                        await loadPairedDevices()
+                                                    }
+                                                }
                                         }
                                         .font(.subheadline)
                                         .foregroundColor(.blue)
@@ -109,9 +114,8 @@ struct SettingsView: View {
                         }
                         .padding(.bottom, 24)
                         
-                        // Usage Alerts Section
                         VStack(alignment: .leading, spacing: 16) {
-                            Text("Usage Alerts")
+                            Text("App Screen Time Limits")
                                 .font(.headline)
                                 .foregroundColor(.secondary)
                                 .padding(.horizontal)
@@ -119,7 +123,7 @@ struct SettingsView: View {
                             VStack(spacing: 16) {
                                 // Enable Alerts Toggle
                                 HStack {
-                                    Text("Enable Alerts")
+                                    Text("Enable App Limits")
                                         .font(.body)
                                     Spacer()
                                     Toggle("", isOn: $alertSettings.isEnabled)
@@ -132,45 +136,14 @@ struct SettingsView: View {
                                 .cornerRadius(12)
                                 
                                 if alertSettings.isEnabled {
-                                    // Daily Screen Time Limit
-                                    VStack(alignment: .leading, spacing: 12) {
-                                        Text("Daily Screen Time Limit")
-                                            .font(.body)
-                                            .fontWeight(.medium)
-                                        HStack {
-                                            Slider(value: $alertSettings.dailyLimitHours, in: 1...12, step: 0.5)
-                                                .onChange(of: alertSettings.dailyLimitHours) { _ in
-                                                    saveAlertSettings()
-                                                }
-                                            Text("\(Int(alertSettings.dailyLimitHours))h \(Int((alertSettings.dailyLimitHours.truncatingRemainder(dividingBy: 1)) * 60))m")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                                .frame(width: 60)
-                                        }
+                                    // Individual App Limits
+                                    ForEach(getTopAppsForLimits(), id: \.bundleIdentifier) { app in
+                                        AppLimitSlider(
+                                            appName: app.appName,
+                                            currentUsage: app.duration,
+                                            timeLimit: bindingForApp(app.bundleIdentifier)
+                                        )
                                     }
-                                    .padding()
-                                    .background(Color(.systemGray6))
-                                    .cornerRadius(12)
-                                    
-                                    // Social Media Limit
-                                    VStack(alignment: .leading, spacing: 12) {
-                                        Text("Social Media Limit")
-                                            .font(.body)
-                                            .fontWeight(.medium)
-                                        HStack {
-                                            Slider(value: $alertSettings.socialMediaLimitHours, in: 0.25...6, step: 0.25)
-                                                .onChange(of: alertSettings.socialMediaLimitHours) { _ in
-                                                    saveAlertSettings()
-                                                }
-                                            Text("\(Int(alertSettings.socialMediaLimitHours))h \(Int((alertSettings.socialMediaLimitHours.truncatingRemainder(dividingBy: 1)) * 60))m")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                                .frame(width: 60)
-                                        }
-                                    }
-                                    .padding()
-                                    .background(Color(.systemGray6))
-                                    .cornerRadius(12)
                                 }
                             }
                             .padding(.horizontal)
@@ -292,7 +265,7 @@ struct SettingsView: View {
                 await loadPairedDevices()
             }
             group.addTask {
-                await loadAlertSettings()
+                await loadAlertSettingsWithDefaults()
             }
         }
     }
@@ -306,6 +279,26 @@ struct SettingsView: View {
         
         isLoading = true
         
+        // DEMO DATA - START (Remove in production)
+        // Simulate loading delay
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        
+        let demoDevice = ChildDevice(
+            id: "demo_device_1",
+            childName: "Savir",
+            deviceName: "Savir's iPhone",
+            pairCode: "123456",
+            parentId: parentId,
+            pairedAt: Timestamp(date: Date().addingTimeInterval(-86400)),
+            isActive: true
+        )
+        
+        pairedDevices = [demoDevice]
+        isLoading = false
+        print("✅ Loaded demo paired device: \(demoDevice.childName)")
+        // DEMO DATA - END (Remove in production)
+        
+        /* PRODUCTION CODE - Uncomment when ready for production
         await withCheckedContinuation { continuation in
             databaseManager.getChildDevices(for: parentId) { result in
                 DispatchQueue.main.async {
@@ -321,6 +314,7 @@ struct SettingsView: View {
                 }
             }
         }
+        */
     }
     
     @MainActor
@@ -380,6 +374,13 @@ struct SettingsView: View {
     private func saveAlertSettings() {
         guard let userId = authManager.currentUser?.id else { return }
         
+        // DEMO DATA - START (Remove in production)
+        // In demo mode, just simulate successful save without Firebase call
+        print("✅ Alert settings saved successfully (DEMO MODE)")
+        return
+        // DEMO DATA - END (Remove in production)
+        
+        /* PRODUCTION CODE - Uncomment when ready for production
         do {
             let encoder = JSONEncoder()
             let data = try encoder.encode(alertSettings)
@@ -401,6 +402,7 @@ struct SettingsView: View {
         } catch {
             showErrorMessage("Failed to encode alert settings")
         }
+        */
     }
     
     // MARK: - Error Handling
@@ -409,6 +411,154 @@ struct SettingsView: View {
         errorMessage = message
         showError = true
         print("🔥 Settings Error: \(message)")
+    }
+    
+    // MARK: - App Limits Helper Methods
+    private func getTopAppsForLimits() -> [AppUsage] {
+        // DEMO DATA - START (Remove in production)
+        let demoApps = [
+            AppUsage(
+                appName: "Instagram",
+                bundleIdentifier: "com.burbn.instagram",
+                duration: 4500, // 1h 15m
+                timestamp: Date().addingTimeInterval(-3600)
+            ),
+            AppUsage(
+                appName: "TikTok",
+                bundleIdentifier: "com.zhiliaoapp.musically",
+                duration: 2700, // 45m
+                timestamp: Date().addingTimeInterval(-7200)
+            ),
+            AppUsage(
+                appName: "YouTube",
+                bundleIdentifier: "com.google.ios.youtube",
+                duration: 3600, // 1h
+                timestamp: Date().addingTimeInterval(-5400)
+            ),
+            AppUsage(
+                appName: "Safari",
+                bundleIdentifier: "com.apple.mobilesafari",
+                duration: 1200, // 20m
+                timestamp: Date().addingTimeInterval(-1800)
+            ),
+            AppUsage(
+                appName: "Snapchat",
+                bundleIdentifier: "com.toyopagroup.picaboo",
+                duration: 1800, // 30m
+                timestamp: Date().addingTimeInterval(-900)
+            ),
+            AppUsage(
+                appName: "Messages",
+                bundleIdentifier: "com.apple.MobileSMS",
+                duration: 900, // 15m
+                timestamp: Date().addingTimeInterval(-600)
+            )
+        ]
+        return Array(demoApps.prefix(6)) // Top 6 apps
+        // DEMO DATA - END (Remove in production)
+        
+        /* PRODUCTION CODE - Uncomment when ready for production
+        // Get the top apps from current screen time data
+        // This would come from your actual screen time data source
+        return []
+        */
+    }
+
+    private func loadAlertSettingsWithDefaults() async {
+        guard let userId = authManager.currentUser?.id else { return }
+        
+        await withCheckedContinuation { continuation in
+            FirebaseManager.shared.usersCollection
+                .document(userId)
+                .collection("settings")
+                .document("alerts")
+                .getDocument { snapshot, error in
+                    DispatchQueue.main.async {
+                        if let data = snapshot?.data(),
+                           let alertData = try? JSONSerialization.data(withJSONObject: data),
+                           let settings = try? JSONDecoder().decode(AlertSettings.self, from: alertData) {
+                            self.alertSettings = settings
+                        } else {
+                            // DEMO DATA - START (Remove in production)
+                            self.alertSettings = AlertSettings.demoSettings
+                            // DEMO DATA - END (Remove in production)
+                            
+                            /* PRODUCTION CODE - Uncomment when ready for production
+                            self.alertSettings = AlertSettings.defaultSettings
+                            */
+                        }
+                        continuation.resume()
+                    }
+                }
+        }
+    }
+    
+    private func bindingForApp(_ bundleId: String) -> Binding<Double> {
+        return Binding(
+            get: { alertSettings.appLimits[bundleId] ?? 2.0 },
+            set: { newValue in
+                alertSettings.appLimits[bundleId] = newValue
+                saveAlertSettings()
+            }
+        )
+    }
+}
+
+// MARK: - Clean App Limit Slider (for Settings)
+struct AppLimitSlider: View {
+    let appName: String
+    let currentUsage: TimeInterval
+    @Binding var timeLimit: Double // in hours
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(appName)
+                    .font(.body)
+                    .fontWeight(.medium)
+                
+                Spacer()
+                
+                Text("Used: \(formatDuration(currentUsage))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            HStack {
+                Slider(value: $timeLimit, in: 0.25...8.0, step: 0.25)
+                
+                Text("Limit: \(formatLimitDuration(timeLimit))")
+                    .font(.subheadline)
+                    .foregroundColor(.primary)
+                    .frame(width: 80, alignment: .leading)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = Int(duration) % 3600 / 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+    
+    private func formatLimitDuration(_ hours: Double) -> String {
+        let totalMinutes = Int(hours * 60)
+        let h = totalMinutes / 60
+        let m = totalMinutes % 60
+        
+        if h > 0 {
+            return "\(h)h \(m)m"
+        } else {
+            return "\(m)m"
+        }
     }
 }
 

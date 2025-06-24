@@ -110,9 +110,12 @@ struct ParentChildSelectionView: View {
             // Parent completes onboarding immediately after selection
             authManager.completeOnboarding()
         case .child:
-            // FIXED: Child does NOT complete onboarding here - they need to finish full setup first
-            // Onboarding will be completed in PermissionRequestView after they grant permissions
-            break
+            // DEMO DATA - START (For new child users, mark them as new signups for proper flow)
+            authManager.isNewSignUp = true
+            // DEMO DATA - END
+            // Child does NOT complete onboarding here - they need to finish full setup first
+            // Set a flag to indicate this is a new child user going through setup
+            authManager.isChildInSetup = true
         }
     }
     

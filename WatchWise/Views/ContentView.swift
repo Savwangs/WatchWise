@@ -41,11 +41,40 @@ struct ContentView: View {
                         if userType == "Child" {
                             // FIXED: Child flow - check if they've completed initial setup
                             if authManager.hasCompletedOnboarding {
-                                // Child has completed full setup (including permissions) - go directly to main interface
+                                // DEMO DATA - START (Child has completed setup, show child home with welcome back)
+                                // Existing child user - go directly to child home with welcome back message
                                 ChildHomeView()
+                                // DEMO DATA - END
+                                
+                                /* PRODUCTION CODE - Uncomment when ready for production
+                                // Check if device is actually paired in production
+                                if let currentUser = authManager.currentUser, currentUser.isDevicePaired {
+                                    ChildHomeView()
+                                } else {
+                                    // Device not paired - should not happen in normal flow
+                                    GenerateCodeView(onCodeGenerated: { _ in }, onPermissionRequested: { })
+                                }
+                                */
                             } else {
-                                // Child selected their type but hasn't completed full setup - start from code generation
-                                ChildHomeView()
+                                // New child user - hasn't completed setup yet
+                                if authManager.isChildInSetup {
+                                    // DEMO DATA - START (New child going through setup - start with code generation)
+                                    NavigationView {
+                                        GenerateCodeView(
+                                            onCodeGenerated: { code in
+                                                print("Code generated: \(code)")
+                                            },
+                                            onPermissionRequested: {
+                                                // After code generation, go to permission request
+                                                // This will be handled by the GenerateCodeView navigation
+                                            }
+                                        )
+                                    }
+                                    // DEMO DATA - END
+                                } else {
+                                    // Fallback - shouldn't happen in normal flow
+                                    ChildHomeView()
+                                }
                             }
                         } else {
                             // Parent flow - check device pairing and onboarding

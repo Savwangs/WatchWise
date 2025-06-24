@@ -27,6 +27,21 @@ class ScreenTimeManager: ObservableObject {
         isLoading = true
         errorMessage = nil
         
+        // DEMO DATA - START (Remove in production)
+            Task {
+                // Simulate network delay
+                try await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 seconds
+                
+                await MainActor.run {
+                    self.pairedDevices = [ChildDevice.demoDevice]
+                    self.todayScreenTime = ScreenTimeData.demoData
+                    self.isLoading = false
+                }
+            }
+            // DEMO DATA - END (Remove in production)
+        
+        
+        /* PRODUCTION CODE - Uncomment when ready for production
         Task {
             do {
                 // Load paired devices from Firebase
@@ -58,6 +73,7 @@ class ScreenTimeManager: ObservableObject {
                 }
             }
         }
+        */
     }
     
     private func loadScreenTimeForDevice(deviceId: String) async {
@@ -85,8 +101,38 @@ class ScreenTimeManager: ObservableObject {
     }
     
     func refreshData(parentId: String) {
+        // DEMO DATA - START (Remove in production)
+        todayScreenTime = nil
+        isLoading = true
+            
+        Task {
+            // Simulate refresh delay
+            try await Task.sleep(nanoseconds: 800_000_000) // 0.8 seconds
+                
+            await MainActor.run {
+                // Slightly modify demo data to show "refresh" effect
+                var refreshedData = ScreenTimeData.demoData
+                // Add a few more minutes to total time to simulate real-time updates
+                let additionalTime: TimeInterval = Double.random(in: 300...900) // 5-15 minutes
+                refreshedData = ScreenTimeData(
+                    id: refreshedData.id,
+                    deviceId: refreshedData.deviceId,
+                    date: refreshedData.date,
+                    totalScreenTime: refreshedData.totalScreenTime + additionalTime,
+                    appUsages: refreshedData.appUsages,
+                    hourlyBreakdown: refreshedData.hourlyBreakdown
+                )
+                    
+                self.todayScreenTime = refreshedData
+                self.isLoading = false
+            }
+        }
+        // DEMO DATA - END (Remove in production)
+        
+        /* PRODUCTION CODE - Uncomment when ready for production
         todayScreenTime = nil
         loadTodayScreenTime(parentId: parentId)
+         */
     }
     
     // MARK: - Real-time Updates

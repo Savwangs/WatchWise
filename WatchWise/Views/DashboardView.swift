@@ -8,6 +8,19 @@ import SwiftUI
 import Charts
 import FirebaseAuth
 
+// DEMO DATA START - Extended app usage data to include Messages
+extension ScreenTimeManager {
+    static let demoAppUsages: [AppUsage] = [
+        AppUsage(appName: "Instagram", bundleIdentifier: "com.burbn.instagram", duration: 4500, timestamp: Date().addingTimeInterval(-3600)), // 1h 15m (30m + 45m from graph)
+        AppUsage(appName: "TikTok", bundleIdentifier: "com.zhiliaoapp.musically", duration: 2700, timestamp: Date().addingTimeInterval(-7200)), // 45m (matches graph)
+        AppUsage(appName: "YouTube", bundleIdentifier: "com.google.ios.youtube", duration: 3600, timestamp: Date().addingTimeInterval(-5400)), // 1h (20m + 40m from graph)
+        AppUsage(appName: "Snapchat", bundleIdentifier: "com.toyopagroup.picaboo", duration: 1800, timestamp: Date().addingTimeInterval(-900)), // 30m (matches graph)
+        AppUsage(appName: "Safari", bundleIdentifier: "com.apple.mobilesafari", duration: 1200, timestamp: Date().addingTimeInterval(-1800)), // 20m (matches graph)
+        AppUsage(appName: "Messages", bundleIdentifier: "com.apple.MobileSMS", duration: 900, timestamp: Date().addingTimeInterval(-600)) // 15m (matches graph)
+    ]
+}
+// DEMO DATA END
+
 struct DashboardView: View {
     @EnvironmentObject var authManager: AuthenticationManager
     @StateObject private var screenTimeManager = ScreenTimeManager()
@@ -107,7 +120,7 @@ struct HeaderView: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading) {
-                Text("Your Child's Usage Today")
+                Text("Savir's Usage Today")
                     .font(.title2)
                     .fontWeight(.bold)
                 
@@ -250,14 +263,9 @@ struct DataDisplayView: View {
                 TopAppsCard(appUsages: screenTimeData.appUsages)
             }
             
-            // Category Breakdown (if we have app data)
-            if !screenTimeData.appUsages.isEmpty {
-                CategoryBreakdownCard(appUsages: screenTimeData.appUsages)
-            }
-            
             // Hourly Breakdown Chart (only show if we have hourly data)
             if !screenTimeData.hourlyBreakdown.isEmpty {
-                HourlyBreakdownCard(hourlyData: screenTimeData.hourlyBreakdown)
+                AppUsageTimelineCard(hourlyData: screenTimeData.hourlyBreakdown)
             }
             
             // Data Collection Info
@@ -313,6 +321,22 @@ struct ScreenTimeCard: View {
 struct TopAppsCard: View {
     let appUsages: [AppUsage]
     
+    // DEMO DATA START - App colors for consistent visualization
+    private let appColors: [String: Color] = [
+        "Instagram": .purple,
+        "TikTok": .black,
+        "YouTube": .red,
+        "Safari": .blue,
+        "Messages": .green,
+        "Snapchat": .yellow
+    ]
+    // DEMO DATA END
+    
+    // Sort apps by duration to ensure all apps including Messages are shown
+    private var sortedAppUsages: [AppUsage] {
+        return appUsages.sorted { $0.duration > $1.duration }
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
@@ -329,14 +353,11 @@ struct TopAppsCard: View {
                     .foregroundColor(.secondary)
                     .padding(.vertical)
             } else {
-                ForEach(Array(appUsages.prefix(5).enumerated()), id: \.offset) { index, usage in
+                ForEach(Array(sortedAppUsages.prefix(6).enumerated()), id: \.offset) { index, usage in
                     HStack {
-                        Text("\(index + 1)")
-                            .font(.caption)
-                            .foregroundColor(.white)
-                            .frame(width: 20, height: 20)
-                            .background(Color.orange)
-                            .clipShape(Circle())
+                        Circle()
+                            .fill(appColors[usage.appName] ?? .gray)
+                            .frame(width: 12, height: 12)
                         
                         Text(usage.appName)
                             .font(.body)
@@ -347,10 +368,6 @@ struct TopAppsCard: View {
                             Text(formatDuration(usage.duration))
                                 .font(.subheadline)
                                 .fontWeight(.medium)
-                            
-                            Text(usage.category)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
                         }
                     }
                 }
@@ -374,171 +391,247 @@ struct TopAppsCard: View {
     }
 }
 
-// MARK: - Category Breakdown Card
-struct CategoryBreakdownCard: View {
-    let appUsages: [AppUsage]
-    
-    private var categoryBreakdown: [String: TimeInterval] {
-        var breakdown: [String: TimeInterval] = [:]
-        for usage in appUsages {
-            breakdown[usage.category, default: 0] += usage.duration
-        }
-        return breakdown
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Image(systemName: "square.grid.2x2.fill")
-                    .foregroundColor(.purple)
-                Text("By Category")
-                    .font(.headline)
-                Spacer()
-            }
-            
-            if categoryBreakdown.isEmpty {
-                Text("No category data available")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .padding(.vertical)
-            } else {
-                ForEach(Array(categoryBreakdown.sorted { $0.value > $1.value }), id: \.key) { category, duration in
-                    HStack {
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(colorForCategory(category))
-                            .frame(width: 4, height: 20)
-                        
-                        Text(category)
-                            .font(.body)
-                        
-                        Spacer()
-                        
-                        Text(formatDuration(duration))
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-        .padding(.horizontal)
-    }
-    
-    private func colorForCategory(_ category: String) -> Color {
-        switch category {
-        case "Social": return .blue
-        case "Entertainment": return .red
-        case "Productivity": return .green
-        case "Communication": return .orange
-        case "Music": return .purple
-        case "Games": return .pink
-        default: return .gray
-        }
-    }
-    
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        let hours = Int(duration) / 3600
-        let minutes = Int(duration) % 3600 / 60
-        
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        } else {
-            return "\(minutes)m"
-        }
-    }
-}
-
-// MARK: - Hourly Breakdown Card
-struct HourlyBreakdownCard: View {
+// MARK: - App Usage Timeline Card (REPLACES HourlyBreakdownCard)
+struct AppUsageTimelineCard: View {
     let hourlyData: [Int: TimeInterval]
     
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Image(systemName: "chart.bar.fill")
-                    .foregroundColor(.green)
-                Text("Hourly Breakdown")
+    // DEMO DATA START - App colors for consistent visualization
+    private let appColors: [String: Color] = [
+        "Instagram": .purple,
+        "TikTok": .black,
+        "YouTube": .red,
+        "Safari": .blue,
+        "Messages": .green,
+        "Snapchat": .yellow
+    ]
+    
+    // DEMO DATA START - Timeline app usage with specific time ranges
+    private let timelineAppUsage: [(appName: String, color: Color, timeBlocks: [(startHour: Int, startMinute: Int, endHour: Int, endMinute: Int)])] = [
+        ("Instagram", .purple, [(8, 5, 8, 35), (18, 0, 18, 45)]), // 8:05 AM-8:35 AM and 6:00 PM-6:45 PM
+        ("TikTok", .black, [(12, 5, 12, 22), (12, 50, 13, 18)]), // 12:05 PM-12:22 PM and 12:50 PM-1:18 PM
+        ("YouTube", .red, [(12, 25, 12, 45), (14, 0, 14, 40)]), // 12:25 PM-12:45 PM and 2:00 PM-2:40 PM
+        ("Safari", .blue, [(16, 0, 16, 20)]), // 4:00 PM-4:20 PM
+        ("Messages", .green, [(20, 15, 20, 30)]), // 8:15 PM-8:30 PM
+        ("Snapchat", .yellow, [(17, 15, 17, 45)]) // 5:15 PM-5:45 PM
+    ]
+    // DEMO DATA END
+    // State for tap interaction
+    @State private var selectedBlock: (appName: String, startTime: String, endTime: String, position: CGPoint)? = nil
+    
+    @ViewBuilder
+    private var overlayContent: some View {
+        if let block = selectedBlock {
+            VStack(spacing: 8) {
+                Text("\(block.appName) Usage:")
                     .font(.headline)
-                Spacer()
-            }
-            
-            if hourlyData.isEmpty {
-                Text("No hourly data available")
+                    .foregroundColor(.primary)
+                
+                Text("\(block.startTime) - \(block.endTime)")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-                    .padding(.vertical)
-            } else {
-                if #available(iOS 16.0, *) {
-                    Chart {
-                        ForEach(sortedHourlyData, id: \.hour) { data in
-                            BarMark(
-                                x: .value("Hour", data.hour),
-                                y: .value("Minutes", data.minutes)
-                            )
-                            .foregroundStyle(Color.green.gradient)
-                            .cornerRadius(4)
-                        }
-                    }
-                    .frame(height: 200)
-                    .chartXAxis {
-                        AxisMarks(values: .automatic) { value in
-                            if let hour = value.as(Int.self) {
-                                AxisValueLabel {
-                                    Text("\(hour):00")
-                                        .font(.caption)
-                                }
-                            }
-                        }
-                    }
-                    .chartYAxis {
-                        AxisMarks { value in
-                            AxisValueLabel {
-                                if let minutes = value.as(Double.self) {
-                                    Text("\(Int(minutes))m")
-                                        .font(.caption)
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    VStack(spacing: 8) {
-                        Text("Hourly usage breakdown:")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        
-                        ForEach(sortedHourlyData.prefix(5), id: \.hour) { data in
-                            HStack {
-                                Text("\(data.hour):00")
-                                    .font(.caption)
-                                    .frame(width: 50, alignment: .leading)
-                                
-                                RoundedRectangle(cornerRadius: 2)
-                                    .fill(Color.green)
-                                    .frame(width: CGFloat(data.minutes) * 2, height: 8)
-                                
-                                Spacer()
-                                
-                                Text("\(Int(data.minutes))m")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                    .frame(height: 150)
+                
+                Button("OK") {
+                    selectedBlock = nil
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(8)
             }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+            .offset(x: block.position.x - 60, y: block.position.y - 40)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedBlock != nil)
+        }
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header
+            HStack {
+                Image(systemName: "clock.fill")
+                    .foregroundColor(.blue)
+                Text("App Usage Times")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Spacer()
+            }
+            .padding(.horizontal)
+            
+            // Timeline Container
+            VStack(spacing: 0) {
+                // Time axis labels (6 AM to 10 PM)
+                HStack(spacing: 0) {
+                    ForEach([6, 8, 10, 12, 14, 16, 18, 20, 22], id: \.self) { hour in
+                        Text(formatTimeLabel(hour))
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
+                
+                // App usage bars
+                VStack(spacing: 10) {
+                    ForEach(timelineAppUsage, id: \.appName) { app in
+                        AppTimelineRow(
+                            appName: app.appName,
+                            color: app.color,
+                            timeBlocks: app.timeBlocks,
+                            onBlockTap: handleBlockTap
+                        )
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+            .padding(.vertical, 16)
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
         }
         .padding()
         .background(Color(.systemGray6))
         .cornerRadius(12)
         .padding(.horizontal)
+        // DEMO DATA START - Bubble overlay for showing app usage details
+        .overlay(overlayContent)
     }
     
-    private var sortedHourlyData: [(hour: Int, minutes: Double)] {
-        hourlyData.map { (hour: $0.key, minutes: $0.value / 60) }
-            .sorted { $0.hour < $1.hour }
+    private func formatTimeLabel(_ hour: Int) -> String {
+        switch hour {
+            case 6: return "6a"
+            case 8: return "8"
+            case 10: return "10"
+            case 12: return "12p"
+            case 14: return "2"
+            case 16: return "4"
+            case 18: return "6p"
+            case 20: return "8"
+            case 22: return "10p"
+            default: return "\(hour)"
+        }
+    }
+    
+    // DEMO DATA START - Updated tap handling with position tracking
+    private func handleBlockTap(appName: String, timeBlock: (startHour: Int, startMinute: Int, endHour: Int, endMinute: Int), at position: CGPoint) {
+        let startTime = formatTime(hour: timeBlock.startHour, minute: timeBlock.startMinute)
+        let endTime = formatTime(hour: timeBlock.endHour, minute: timeBlock.endMinute)
+            
+        selectedBlock = (appName: appName, startTime: startTime, endTime: endTime, position: position)
+    }
+    // DEMO DATA END
+        
+    private func formatTime(hour: Int, minute: Int) -> String {
+        let period = hour < 12 ? "AM" : "PM"
+        let displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour)
+        return String(format: "%d:%02d %@", displayHour, minute, period)
+    }
+    // DEMO DATA END
+}
+
+// MARK: - App Timeline Row
+struct AppTimelineRow: View {
+    let appName: String
+    let color: Color
+    let timeBlocks: [(startHour: Int, startMinute: Int, endHour: Int, endMinute: Int)]
+    // DEMO DATA START - Updated callback to include tap position
+    let onBlockTap: (String, (startHour: Int, startMinute: Int, endHour: Int, endMinute: Int), CGPoint) -> Void
+    // DEMO DATA END
+    
+    // Timeline spans from 6 AM (hour 6) to 10 PM (hour 22) = 16 hours total
+    private let startHour: Int = 6
+    private let endHour: Int = 22
+    private let totalHours: Int = 16
+    
+    var body: some View {
+        HStack(spacing: 0) {
+            // Timeline container
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    // Background timeline
+                    Rectangle()
+                        .fill(Color(.systemGray5))
+                        .frame(height: 12)
+                        .cornerRadius(6)
+                    
+                    // Usage bars - This is the problematic part
+                    ForEach(Array(timeBlocks.enumerated()), id: \.offset) { index, block in
+                        let startPosition = calculatePosition(hour: block.startHour, minute: block.startMinute, totalWidth: geometry.size.width)
+                        let endPosition = calculatePosition(hour: block.endHour, minute: block.endMinute, totalWidth: geometry.size.width)
+                        let blockWidth = endPosition - startPosition
+                        
+                        let rectangle = RoundedRectangle(cornerRadius: 6)
+                            .fill(color)
+                            .frame(width: max(blockWidth, 4), height: 12)
+                            .offset(x: startPosition)
+                        
+                        // Break out the tap gesture logic into a separate function
+                        rectangle
+                            .onTapGesture {
+                                handleTapGesture(
+                                    appName: appName,
+                                    block: block,
+                                    startPosition: startPosition,
+                                    blockWidth: blockWidth,
+                                    geometry: geometry
+                                )
+                            }
+                    }
+                }
+            }
+            .frame(height: 12)
+        }
+    }
+
+    // Add this new helper function inside AppTimelineRow
+    private func handleTapGesture(
+        appName: String,
+        block: (startHour: Int, startMinute: Int, endHour: Int, endMinute: Int),
+        startPosition: CGFloat,
+        blockWidth: CGFloat,
+        geometry: GeometryProxy
+    ) {
+        let screenWidth = geometry.size.width
+        let bubbleWidth: CGFloat = 120
+        let bubbleHeight: CGFloat = 80
+
+        let (adjustedX, adjustedY): (CGFloat, CGFloat) = {
+            let baseX = startPosition + (blockWidth / 2)
+            
+            switch appName {
+            case "Instagram":
+                return (baseX - 40, -30)
+            case "Messages":
+                return (baseX - 80, 35)
+            case "Snapchat":
+                return (baseX - 40, 60)
+            default:
+                var x = baseX
+                if x + bubbleWidth/2 > screenWidth {
+                    x = screenWidth - bubbleWidth/2 - 10
+                } else if x - bubbleWidth/2 < 0 {
+                    x = bubbleWidth/2 + 10
+                }
+                return (x, 0)
+            }
+        }()
+
+        let globalPosition = CGPoint(x: adjustedX, y: adjustedY)
+        onBlockTap(appName, block, globalPosition)
+    }
+    
+    private func calculatePosition(hour: Int, minute: Int, totalWidth: CGFloat) -> CGFloat {
+        // Convert time to minutes from start time (6 AM)
+        let totalMinutesFromStart = (hour - startHour) * 60 + minute
+        let totalTimelineMinutes = totalHours * 60
+        
+        // Calculate position as percentage of total width
+        let percentage = CGFloat(totalMinutesFromStart) / CGFloat(totalTimelineMinutes)
+        return percentage * totalWidth
     }
 }
 
