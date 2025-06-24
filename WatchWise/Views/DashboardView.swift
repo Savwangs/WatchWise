@@ -416,8 +416,38 @@ struct AppUsageTimelineCard: View {
     ]
     // DEMO DATA END
     // State for tap interaction
-    @State private var selectedBlock: (appName: String, startTime: String, endTime: String)? = nil
-    @State private var showingBlockDetails = false
+    @State private var selectedBlock: (appName: String, startTime: String, endTime: String, position: CGPoint)? = nil
+    
+    @ViewBuilder
+    private var overlayContent: some View {
+        if let block = selectedBlock {
+            VStack(spacing: 8) {
+                Text("\(block.appName) Usage:")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                Text("\(block.startTime) - \(block.endTime)")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                
+                Button("OK") {
+                    selectedBlock = nil
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(8)
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+            .offset(x: block.position.x - 60, y: block.position.y - 40)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedBlock != nil)
+        }
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Header
@@ -435,7 +465,7 @@ struct AppUsageTimelineCard: View {
             VStack(spacing: 0) {
                 // Time axis labels (6 AM to 10 PM)
                 HStack(spacing: 0) {
-                    ForEach(6...22, id: \.self) { hour in
+                    ForEach([6, 8, 10, 12, 14, 16, 18, 20, 22], id: \.self) { hour in
                         Text(formatTimeLabel(hour))
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
@@ -467,34 +497,33 @@ struct AppUsageTimelineCard: View {
         .background(Color(.systemGray6))
         .cornerRadius(12)
         .padding(.horizontal)
-        .alert("App Usage Details", isPresented: $showingBlockDetails) {
-                Button("OK") {
-                    selectedBlock = nil
-                }
-            } message: {
-                if let block = selectedBlock {
-                    Text("\(block.appName) Usage:\n\(block.startTime) - \(block.endTime)")
-                }
-            }
+        // DEMO DATA START - Bubble overlay for showing app usage details
+        .overlay(overlayContent)
     }
     
     private func formatTimeLabel(_ hour: Int) -> String {
-        if hour == 6 { return "6a" }
-        else if hour == 12 { return "12p" }
-        else if hour == 18 { return "6p" }
-        else if hour == 22 { return "10p" }
-        else if hour < 12 { return "\(hour)" }
-        else { return "\(hour - 12)" }
+        switch hour {
+            case 6: return "6a"
+            case 8: return "8"
+            case 10: return "10"
+            case 12: return "12p"
+            case 14: return "2"
+            case 16: return "4"
+            case 18: return "6p"
+            case 20: return "8"
+            case 22: return "10p"
+            default: return "\(hour)"
+        }
     }
     
-    // DEMO DATA START - Tap handling for time blocks
-    private func handleBlockTap(appName: String, timeBlock: ( startHour: Int, startMinute: Int, endHour: Int, endMinute: Int)) {
+    // DEMO DATA START - Updated tap handling with position tracking
+    private func handleBlockTap(appName: String, timeBlock: (startHour: Int, startMinute: Int, endHour: Int, endMinute: Int), at position: CGPoint) {
         let startTime = formatTime(hour: timeBlock.startHour, minute: timeBlock.startMinute)
         let endTime = formatTime(hour: timeBlock.endHour, minute: timeBlock.endMinute)
             
-        selectedBlock = (appName: appName, startTime: startTime, endTime: endTime)
-        showingBlockDetails = true
+        selectedBlock = (appName: appName, startTime: startTime, endTime: endTime, position: position)
     }
+    // DEMO DATA END
         
     private func formatTime(hour: Int, minute: Int) -> String {
         let period = hour < 12 ? "AM" : "PM"
@@ -509,7 +538,9 @@ struct AppTimelineRow: View {
     let appName: String
     let color: Color
     let timeBlocks: [(startHour: Int, startMinute: Int, endHour: Int, endMinute: Int)]
-    let onBlockTap: (String, (startHour: Int, startMinute: Int, endHour: Int, endMinute: Int)) -> Void
+    // DEMO DATA START - Updated callback to include tap position
+    let onBlockTap: (String, (startHour: Int, startMinute: Int, endHour: Int, endMinute: Int), CGPoint) -> Void
+    // DEMO DATA END
     
     // Timeline spans from 6 AM (hour 6) to 10 PM (hour 22) = 16 hours total
     private let startHour: Int = 6
@@ -518,7 +549,6 @@ struct AppTimelineRow: View {
     
     var body: some View {
         HStack(spacing: 0) {
-            
             // Timeline container
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
@@ -528,24 +558,70 @@ struct AppTimelineRow: View {
                         .frame(height: 12)
                         .cornerRadius(6)
                     
-                    // Usage bars
+                    // Usage bars - This is the problematic part
                     ForEach(Array(timeBlocks.enumerated()), id: \.offset) { index, block in
                         let startPosition = calculatePosition(hour: block.startHour, minute: block.startMinute, totalWidth: geometry.size.width)
                         let endPosition = calculatePosition(hour: block.endHour, minute: block.endMinute, totalWidth: geometry.size.width)
                         let blockWidth = endPosition - startPosition
                         
-                        RoundedRectangle(cornerRadius: 6)
+                        let rectangle = RoundedRectangle(cornerRadius: 6)
                             .fill(color)
-                            .frame(width: max(blockWidth, 4), height: 12) // Minimum 4pt width for visibility
+                            .frame(width: max(blockWidth, 4), height: 12)
                             .offset(x: startPosition)
+                        
+                        // Break out the tap gesture logic into a separate function
+                        rectangle
                             .onTapGesture {
-                                onBlockTap(appName, block)
+                                handleTapGesture(
+                                    appName: appName,
+                                    block: block,
+                                    startPosition: startPosition,
+                                    blockWidth: blockWidth,
+                                    geometry: geometry
+                                )
                             }
                     }
                 }
             }
             .frame(height: 12)
         }
+    }
+
+    // Add this new helper function inside AppTimelineRow
+    private func handleTapGesture(
+        appName: String,
+        block: (startHour: Int, startMinute: Int, endHour: Int, endMinute: Int),
+        startPosition: CGFloat,
+        blockWidth: CGFloat,
+        geometry: GeometryProxy
+    ) {
+        let screenWidth = geometry.size.width
+        let bubbleWidth: CGFloat = 120
+        let bubbleHeight: CGFloat = 80
+
+        let (adjustedX, adjustedY): (CGFloat, CGFloat) = {
+            let baseX = startPosition + (blockWidth / 2)
+            
+            switch appName {
+            case "Instagram":
+                return (baseX - 40, -30)
+            case "Messages":
+                return (baseX - 80, 35)
+            case "Snapchat":
+                return (baseX - 40, 60)
+            default:
+                var x = baseX
+                if x + bubbleWidth/2 > screenWidth {
+                    x = screenWidth - bubbleWidth/2 - 10
+                } else if x - bubbleWidth/2 < 0 {
+                    x = bubbleWidth/2 + 10
+                }
+                return (x, 0)
+            }
+        }()
+
+        let globalPosition = CGPoint(x: adjustedX, y: adjustedY)
+        onBlockTap(appName, block, globalPosition)
     }
     
     private func calculatePosition(hour: Int, minute: Int, totalWidth: CGFloat) -> CGFloat {
