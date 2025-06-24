@@ -449,8 +449,10 @@ struct AppUsageTimelineCard: View {
                 VStack(spacing: 10) {
                     ForEach(timelineAppUsage, id: \.appName) { app in
                         AppTimelineRow(
+                            appName: app.appName,
                             color: app.color,
-                            timeBlocks: app.timeBlocks
+                            timeBlocks: app.timeBlocks,
+                            onBlockTap: handleBlockTap
                         )
                     }
                 }
@@ -484,12 +486,30 @@ struct AppUsageTimelineCard: View {
         else if hour < 12 { return "\(hour)" }
         else { return "\(hour - 12)" }
     }
+    
+    // DEMO DATA START - Tap handling for time blocks
+    private func handleBlockTap(appName: String, timeBlock: ( startHour: Int, startMinute: Int, endHour: Int, endMinute: Int)) {
+        let startTime = formatTime(hour: timeBlock.startHour, minute: timeBlock.startMinute)
+        let endTime = formatTime(hour: timeBlock.endHour, minute: timeBlock.endMinute)
+            
+        selectedBlock = (appName: appName, startTime: startTime, endTime: endTime)
+        showingBlockDetails = true
+    }
+        
+    private func formatTime(hour: Int, minute: Int) -> String {
+        let period = hour < 12 ? "AM" : "PM"
+        let displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour)
+        return String(format: "%d:%02d %@", displayHour, minute, period)
+    }
+    // DEMO DATA END
 }
 
 // MARK: - App Timeline Row
 struct AppTimelineRow: View {
+    let appName: String
     let color: Color
     let timeBlocks: [(startHour: Int, startMinute: Int, endHour: Int, endMinute: Int)]
+    let onBlockTap: (String, (startHour: Int, startMinute: Int, endHour: Int, endMinute: Int)) -> Void
     
     // Timeline spans from 6 AM (hour 6) to 10 PM (hour 22) = 16 hours total
     private let startHour: Int = 6
@@ -518,6 +538,9 @@ struct AppTimelineRow: View {
                             .fill(color)
                             .frame(width: max(blockWidth, 4), height: 12) // Minimum 4pt width for visibility
                             .offset(x: startPosition)
+                            .onTapGesture {
+                                onBlockTap(appName, block)
+                            }
                     }
                 }
             }
