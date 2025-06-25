@@ -146,27 +146,25 @@ struct GenerateCodeView: View {
                         .padding(.top)
                         .disabled(pairingManager.isLoading)
                         
-                        // DEMO DATA - START (Test button for debugging)
-                        Button(action: testPairingCompletion) {
-                            Text("Test Pairing Completion")
+                        // DEMO DATA - START (Manual navigation button for child)
+                        VStack(spacing: 12) {
+                            Text("Once your parent has entered this code in their app, click the button below to go to your home page.")
                                 .font(.caption)
-                                .foregroundColor(.orange)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                            
+                            Button(action: navigateToChildHome) {
+                                Text("Go to My Home Page")
+                                    .font(.headline)
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.green)
+                                    .cornerRadius(12)
+                            }
                         }
-                        .padding(.top, 8)
-                        
-                        Button(action: checkPairingStatus) {
-                            Text("Check Pairing Status")
-                                .font(.caption)
-                                .foregroundColor(.purple)
-                        }
-                        .padding(.top, 4)
-                        
-                        Button(action: forceNavigateToChildHome) {
-                            Text("Force Navigate to Child Home")
-                                .font(.caption)
-                                .foregroundColor(.red)
-                        }
-                        .padding(.top, 4)
+                        .padding(.top, 20)
                         // DEMO DATA - END
                         
                     } else {
@@ -243,8 +241,8 @@ struct GenerateCodeView: View {
                     timeRemaining = 600 // Reset to 10 minutes
                     onCodeGenerated(code)
                     startTimer()
-                    // DEMO DATA - START (Start listening for pairing completion)
-                    startPairingListener()
+                    // DEMO DATA - START (Manual navigation - no automatic listener needed)
+                    // startPairingListener() - Removed for manual navigation
                     // DEMO DATA - END
                     
                 case .failure(let error):
@@ -294,80 +292,6 @@ struct GenerateCodeView: View {
         return String(format: "%02d:%02d", minutes, remainingSeconds)
     }
     
-    // DEMO DATA - START (Listen for pairing completion)
-    private func startPairingListener() {
-        Task {
-            print("🔍 Starting pairing listener for code: \(pairCode)")
-            print("🔍 Current state - isCodeGenerated: \(isCodeGenerated), isPairingCompleted: \(isPairingCompleted), timeRemaining: \(timeRemaining)")
-            
-            // In demo mode, simulate listening for pairing completion
-            // In production, this would listen to Firebase for real-time updates
-            while isCodeGenerated && !isPairingCompleted && timeRemaining > 0 {
-                // Check if pairing was completed by checking demo data
-                let pairingFlag = UserDefaults.standard.bool(forKey: "demoChildPaired_\(pairCode)")
-                print("🔍 Checking pairing flag for code \(pairCode): \(pairingFlag)")
-                
-                if pairingFlag {
-                    print("✅ Pairing detected for code: \(pairCode)")
-                    
-                    await MainActor.run {
-                        print("🔄 MainActor: Processing pairing completion")
-                        isPairingCompleted = true
-                        
-                        // DEMO DATA - START (Set child data in UserDefaults for demo)
-                        UserDefaults.standard.set(childName, forKey: "demoChildName")
-                        UserDefaults.standard.set(deviceName, forKey: "demoDeviceName")
-                        UserDefaults.standard.set(true, forKey: "demoChildDevicePaired")
-                        print("📝 Set demo data - childName: \(childName), deviceName: \(deviceName)")
-                        // DEMO DATA - END
-                        
-                        // Stop the timer since pairing is complete
-                        stopTimer()
-                        
-                        // Clean up the pairing flags
-                        UserDefaults.standard.removeObject(forKey: "demoChildPaired_\(pairCode)")
-                        UserDefaults.standard.removeObject(forKey: "demoPairingTimestamp_\(pairCode)")
-                        print("🧹 Cleaned up pairing flags")
-                        
-                        print("🔄 Navigating to child home after successful pairing")
-                        
-                        // Navigate directly to child home by completing onboarding
-                        // DEMO DATA - START (Navigate directly to child home by completing onboarding)
-                        print("📝 Updating auth manager state...")
-                        authManager.updateChildSetupStatus(isInSetup: false)
-                        authManager.updateDevicePairingStatus(isPaired: true)
-                        authManager.completeOnboarding()
-                        
-                        // Debug the pairing status
-                        authManager.debugPairingStatus()
-                        
-                        // Force ContentView to re-evaluate navigation by triggering objectWillChange
-                        print("🔄 Triggering auth manager objectWillChange...")
-                        DispatchQueue.main.async {
-                            authManager.objectWillChange.send()
-                            print("✅ objectWillChange sent")
-                        }
-                        // DEMO DATA - END
-                    }
-                    break
-                }
-                
-                // Check every 500ms for faster response
-                try? await Task.sleep(nanoseconds: 500_000_000)
-            }
-            
-            // Clean up expired pairing attempts
-            await MainActor.run {
-                if !isPairingCompleted {
-                    print("🧹 Cleaning up expired pairing attempt for code: \(pairCode)")
-                    UserDefaults.standard.removeObject(forKey: "demoChildPaired_\(pairCode)")
-                    UserDefaults.standard.removeObject(forKey: "demoPairingTimestamp_\(pairCode)")
-                }
-            }
-        }
-    }
-    // DEMO DATA - END
-    
     // DEMO DATA - START (Clean up old pairing attempts on app launch)
     private func cleanupExpiredPairingAttempts() {
         let userDefaults = UserDefaults.standard
@@ -391,36 +315,23 @@ struct GenerateCodeView: View {
     }
     // DEMO DATA - END
     
-    // DEMO DATA - START (Test function for debugging pairing completion)
-    private func testPairingCompletion() {
-        print("🧪 Testing pairing completion for code: \(pairCode)")
-        UserDefaults.standard.set(true, forKey: "demoChildPaired_\(pairCode)")
-        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "demoPairingTimestamp_\(pairCode)")
-    }
-    // DEMO DATA - END
-    
-    // DEMO DATA - START (Debug function to check pairing status)
-    private func checkPairingStatus() {
-        print("🔍 DEBUG: Checking pairing status for code: \(pairCode)")
-        let pairingFlag = UserDefaults.standard.bool(forKey: "demoChildPaired_\(pairCode)")
-        let timestamp = UserDefaults.standard.double(forKey: "demoPairingTimestamp_\(pairCode)")
-        print("🔍 Pairing flag: \(pairingFlag)")
-        print("🔍 Timestamp: \(timestamp)")
-        print("🔍 Current state - isCodeGenerated: \(isCodeGenerated), isPairingCompleted: \(isPairingCompleted), timeRemaining: \(timeRemaining)")
-    }
-    // DEMO DATA - END
-    
-    // DEMO DATA - START (Force navigation to child home for testing)
-    private func forceNavigateToChildHome() {
-        print("🚀 Force navigating to child home")
+    // DEMO DATA - START (Manual navigation button for child)
+    private func navigateToChildHome() {
+        print("👶 Child manually navigating to home page")
+        
+        // Set demo data for the child
+        UserDefaults.standard.set(childName, forKey: "demoChildName")
+        UserDefaults.standard.set(deviceName, forKey: "demoDeviceName")
+        UserDefaults.standard.set(true, forKey: "demoChildDevicePaired")
+        
+        // Update auth manager state to complete onboarding
         authManager.updateChildSetupStatus(isInSetup: false)
         authManager.updateDevicePairingStatus(isPaired: true)
         authManager.completeOnboarding()
-        authManager.debugPairingStatus()
         
+        // Force ContentView to re-evaluate navigation
         DispatchQueue.main.async {
             authManager.objectWillChange.send()
-            print("✅ Force navigation objectWillChange sent")
         }
     }
     // DEMO DATA - END

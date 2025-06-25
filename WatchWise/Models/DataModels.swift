@@ -188,12 +188,29 @@ struct AlertSettings: Codable {
     var alertTimes: [String] // Time strings like "09:00", "15:00"
     var enabledCategories: [String]
     var appLimits: [String: Double]
+    var bedtimeSettings: BedtimeSettings
     
     static let defaultSettings = AlertSettings(
         isEnabled: true,
         alertTimes: ["12:00", "18:00"],
         enabledCategories: ["Social Networking", "Games", "Entertainment"],
-        appLimits: [:]
+        appLimits: [:],
+        bedtimeSettings: BedtimeSettings.defaultSettings
+    )
+}
+
+// Bedtime settings for automatic app disabling
+struct BedtimeSettings: Codable {
+    var isEnabled: Bool
+    var startTime: String // Format: "22:00" (10:00 PM)
+    var endTime: String   // Format: "08:00" (8:00 AM)
+    var enabledDays: [Int] // 1 = Sunday, 2 = Monday, ..., 7 = Saturday
+    
+    static let defaultSettings = BedtimeSettings(
+        isEnabled: false,
+        startTime: "22:00",
+        endTime: "08:00",
+        enabledDays: [1, 2, 3, 4, 5, 6, 7] // All days
     )
 }
 
@@ -288,7 +305,13 @@ extension AlertSettings {
                 "com.apple.mobilesafari": 0.5, // 30m limit (current: 20m)
                 "com.toyopagroup.picaboo": 1.0, // 1h limit (current: 30m)
                 "com.apple.MobileSMS": 0.5 // 30m limit (current: 15m)
-            ]
+            ],
+            bedtimeSettings: BedtimeSettings(
+                isEnabled: true,
+                startTime: "22:00", // 10:00 PM
+                endTime: "05:00",   // 5:00 AM
+                enabledDays: [1, 2, 3, 4, 5, 6, 7] // All days
+            )
         )
     }
 }

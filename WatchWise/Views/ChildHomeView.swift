@@ -12,129 +12,36 @@ struct ChildHomeView: View {
     @EnvironmentObject var authManager: AuthenticationManager
     @StateObject private var screenTimeDataManager = ScreenTimeDataManager()
     @State private var showSignOutAlert = false
-    @State private var currentScreenTime = "4h 5m"
     
     var body: some View {
         TabView {
-            // Dashboard Tab (Main View)
-            NavigationView {
-                ScrollView {
-                    VStack(spacing: 24) {
-                        // Welcome Header
-                        VStack(spacing: 8) {
-                            // DEMO DATA - START (Remove in production)
-                            Text(authManager.isNewSignUp ? "Connection Successful!" : "Welcome back, Savir!")
-                                .font(.title)
-                                .fontWeight(.bold)
-                                .padding(.top, 20)
-                            
-                            Text("Today's Screen Time")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            // DEMO DATA - END (Remove in production)
-                            
-                            /* PRODUCTION CODE - Uncomment when ready for production
-                            Text("Welcome back, \(authManager.currentUser?.name ?? "")!")
-                                .font(.title)
-                                .fontWeight(.bold)
-                                .padding(.top, 20)
-                            
-                            Text("Today's Screen Time")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            */
-                        }
-                        
-                        // Screen Time Card
-                        VStack(spacing: 16) {
-                            Text(currentScreenTime)
-                                .font(.system(size: 48, weight: .bold, design: .rounded))
-                                .foregroundColor(.blue)
-                            
-                            HStack {
-                                Image(systemName: "clock.fill")
-                                    .foregroundColor(.blue)
-                                Text("Total time today")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .padding(.vertical, 32)
-                        .padding(.horizontal, 24)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(16)
-                        
-                        // Top Apps Section
-                        VStack(alignment: .leading, spacing: 16) {
-                            HStack {
-                                Text("Top 3 Most Used Apps")
-                                    .font(.headline)
-                                    .fontWeight(.semibold)
-                                Spacer()
-                            }
-                            
-                            // DEMO DATA - START (Remove in production)
-                            AppUsageRow(appName: "Instagram", duration: "1h 15m", icon: "camera.fill", color: .pink)
-                            AppUsageRow(appName: "Youtube", duration: "1h", icon: "play.rectangle.fill", color: .red)
-                            AppUsageRow(appName: "TikTok", duration: "45m", icon: "music.note", color: .black)
-                            // DEMO DATA - END (Remove in production)
-                            
-                            /* PRODUCTION CODE - Uncomment when ready for production
-                            ForEach(screenTimeDataManager.topApps, id: \.id) { app in
-                                AppUsageRow(
-                                    appName: app.name,
-                                    duration: formatDuration(app.duration),
-                                    icon: app.icon,
-                                    color: app.color
-                                )
-                            }
-                            */
-                        }
-                        .padding(.horizontal, 4)
-                        
-                        // Connection Status
-                        HStack {
-                            Image(systemName: "link.circle.fill")
-                                .foregroundColor(.green)
-                            // DEMO DATA - START (Remove in production)
-                            Text("Connected to Parent Device")
-                            // DEMO DATA - END (Remove in production)
-                            
-                            /* PRODUCTION CODE - Uncomment when ready for production
-                            Text("Connected to \(authManager.parentDeviceName ?? "Parent Device")")
-                            */
-                            
-                            Spacer()
-                            
-                            Text("Active")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.green.opacity(0.2))
-                                .cornerRadius(6)
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(12)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
-                }
-                .navigationBarHidden(true)
-            }
-            .tabItem {
-                Image(systemName: "house.fill")
-                Text("Dashboard")
-            }
-            
-            // Messages Tab
+            // Messages Tab (Default Tab)
             NavigationView {
                 VStack(spacing: 20) {
-                    Text("Messages from Parent")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .padding(.top, 20)
+                    // Welcome Header
+                    VStack(spacing: 8) {
+                        // DEMO DATA - START (Remove in production)
+                        Text(authManager.isNewSignUp ? "Connection Successful!" : "Welcome back, Savir!")
+                            .font(.title)
+                            .fontWeight(.bold)
+                            .padding(.top, 20)
+                        
+                        Text("Messages from Parent")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        // DEMO DATA - END (Remove in production)
+                        
+                        /* PRODUCTION CODE - Uncomment when ready for production
+                        Text("Welcome back, \(authManager.currentUser?.name ?? "")!")
+                            .font(.title)
+                            .fontWeight(.bold)
+                            .padding(.top, 20)
+                        
+                        Text("Messages from Parent")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        */
+                    }
                     
                     // Messages List
                     ScrollView {
@@ -233,6 +140,40 @@ struct ChildHomeView: View {
                         }
                     }
                     
+                    Section("Bedtime Settings") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Image(systemName: "moon.fill")
+                                    .foregroundColor(.purple)
+                                Text("Your Bedtime")
+                                    .font(.headline)
+                                    .fontWeight(.semibold)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Current Bedtime Range")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                
+                                HStack {
+                                    Text("10:00 PM - 5:00 AM")
+                                        .font(.title3)
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.purple)
+                                    Spacer()
+                                }
+                                .padding()
+                                .background(Color.purple.opacity(0.1))
+                                .cornerRadius(8)
+                                
+                                Text("During this time, your apps will be automatically disabled to help you get a good night's sleep.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 8)
+                    }
+                    
                     Section("Privacy & Support") {
                         NavigationLink(destination: PrivacyPolicyView()) {
                             Label("Privacy Policy", systemImage: "hand.raised.fill")
@@ -259,32 +200,6 @@ struct ChildHomeView: View {
         } message: {
             Text("Are you sure you want to sign out? This will disconnect your device from your parent.")
         }
-        .onAppear {
-            updateScreenTime()
-        }
-    }
-    
-    private func updateScreenTime() {
-        // DEMO DATA - START (Remove in production)
-        // Use demo data from ScreenTimeData for consistency
-        let demoData = ScreenTimeData.demoData
-        let hours = Int(demoData.totalScreenTime) / 3600
-        let minutes = Int(demoData.totalScreenTime) % 3600 / 60
-        currentScreenTime = hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
-        // DEMO DATA - END (Remove in production)
-        
-        /* PRODUCTION CODE - Uncomment when ready for production
-        Task {
-            if let userId = authManager.currentUser?.id {
-                let screenTimeData = try await databaseManager.getScreenTimeData(for: userId, date: Date())
-                await MainActor.run {
-                    let hours = Int(screenTimeData.totalScreenTime) / 3600
-                    let minutes = Int(screenTimeData.totalScreenTime) % 3600 / 60
-                    currentScreenTime = hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
-                }
-            }
-        }
-        */
     }
     
     private func signOut() {
@@ -299,40 +214,6 @@ struct ChildHomeView: View {
 }
 
 // MARK: - Supporting Views
-
-struct AppUsageRow: View {
-    let appName: String
-    let duration: String
-    let icon: String
-    let color: Color
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .foregroundColor(color)
-                .frame(width: 24, height: 24)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(appName)
-                    .font(.body)
-                    .fontWeight(.medium)
-                
-                Text(duration)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-            
-            // Simple usage bar
-            Rectangle()
-                .fill(color.opacity(0.3))
-                .frame(width: 40, height: 4)
-                .cornerRadius(2)
-        }
-        .padding(.vertical, 8)
-    }
-}
 
 struct MessageRow: View {
     let message: String

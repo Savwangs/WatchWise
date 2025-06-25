@@ -150,6 +150,170 @@ struct SettingsView: View {
                         }
                         .padding(.bottom, 24)
                         
+                        // Bedtime Settings Section
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Bedtime Settings")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal)
+                            
+                            VStack(spacing: 16) {
+                                // Enable Bedtime Toggle
+                                HStack {
+                                    Text("Enable Bedtime Mode")
+                                        .font(.body)
+                                    Spacer()
+                                    Toggle("", isOn: $alertSettings.bedtimeSettings.isEnabled)
+                                        .onChange(of: alertSettings.bedtimeSettings.isEnabled) { _ in
+                                            saveAlertSettings()
+                                        }
+                                }
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .cornerRadius(12)
+                                .onAppear {
+                                    print("🔍 Bedtime settings loaded - Enabled: \(alertSettings.bedtimeSettings.isEnabled), Range: \(alertSettings.bedtimeSettings.startTime) - \(alertSettings.bedtimeSettings.endTime)")
+                                }
+                                
+                                if alertSettings.bedtimeSettings.isEnabled {
+                                    // Current Bedtime Range Display
+                                    VStack(spacing: 8) {
+                                        HStack {
+                                            Text("Current Bedtime Range")
+                                                .font(.body)
+                                                .fontWeight(.medium)
+                                            Spacer()
+                                        }
+                                        
+                                        HStack {
+                                            Image(systemName: "moon.fill")
+                                                .foregroundColor(.purple)
+                                            Text(formatTimeForDisplay(alertSettings.bedtimeSettings.startTime) + " - " + formatTimeForDisplay(alertSettings.bedtimeSettings.endTime))
+                                                .font(.headline)
+                                                .fontWeight(.semibold)
+                                            Spacer()
+                                        }
+                                        .padding()
+                                        .background(Color.purple.opacity(0.1))
+                                        .cornerRadius(8)
+                                    }
+                                    
+                                    // Bedtime Time Range
+                                    VStack(spacing: 12) {
+                                        HStack {
+                                            Text("Bedtime Range")
+                                                .font(.body)
+                                                .fontWeight(.medium)
+                                            Spacer()
+                                        }
+                                        
+                                        HStack(spacing: 16) {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text("Start Time")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                                
+                                                DatePicker("", selection: Binding(
+                                                    get: { 
+                                                        let formatter = DateFormatter()
+                                                        formatter.dateFormat = "HH:mm"
+                                                        return formatter.date(from: alertSettings.bedtimeSettings.startTime) ?? Date()
+                                                    },
+                                                    set: { newDate in
+                                                        let formatter = DateFormatter()
+                                                        formatter.dateFormat = "HH:mm"
+                                                        alertSettings.bedtimeSettings.startTime = formatter.string(from: newDate)
+                                                        saveAlertSettings()
+                                                    }
+                                                ), displayedComponents: .hourAndMinute)
+                                                .labelsHidden()
+                                            }
+                                            
+                                            Text("to")
+                                                .font(.body)
+                                                .foregroundColor(.secondary)
+                                            
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text("End Time")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                                
+                                                DatePicker("", selection: Binding(
+                                                    get: { 
+                                                        let formatter = DateFormatter()
+                                                        formatter.dateFormat = "HH:mm"
+                                                        return formatter.date(from: alertSettings.bedtimeSettings.endTime) ?? Date()
+                                                    },
+                                                    set: { newDate in
+                                                        let formatter = DateFormatter()
+                                                        formatter.dateFormat = "HH:mm"
+                                                        alertSettings.bedtimeSettings.endTime = formatter.string(from: newDate)
+                                                        saveAlertSettings()
+                                                    }
+                                                ), displayedComponents: .hourAndMinute)
+                                                .labelsHidden()
+                                            }
+                                            
+                                            Spacer()
+                                        }
+                                    }
+                                    .padding()
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(12)
+                                    
+                                    // Days of Week Selection
+                                    VStack(spacing: 12) {
+                                        HStack {
+                                            Text("Active Days")
+                                                .font(.body)
+                                                .fontWeight(.medium)
+                                            Spacer()
+                                        }
+                                        
+                                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
+                                            ForEach(1...7, id: \.self) { day in
+                                                DayToggleButton(
+                                                    day: day,
+                                                    isSelected: alertSettings.bedtimeSettings.enabledDays.contains(day),
+                                                    onToggle: { isSelected in
+                                                        if isSelected {
+                                                            alertSettings.bedtimeSettings.enabledDays.append(day)
+                                                        } else {
+                                                            alertSettings.bedtimeSettings.enabledDays.removeAll { $0 == day }
+                                                        }
+                                                        saveAlertSettings()
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                    .padding()
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(12)
+                                    
+                                    // Bedtime Info
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            Image(systemName: "moon.fill")
+                                                .foregroundColor(.purple)
+                                            Text("Bedtime Mode Info")
+                                                .font(.body)
+                                                .fontWeight(.medium)
+                                        }
+                                        
+                                        Text("During bedtime hours, monitored apps will be automatically disabled on your child's device to encourage healthy sleep habits.")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding()
+                                    .background(Color.purple.opacity(0.1))
+                                    .cornerRadius(12)
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                        .padding(.bottom, 24)
+                        
                         // Privacy & Support Section
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Privacy & Support")
@@ -467,6 +631,14 @@ struct SettingsView: View {
     private func loadAlertSettingsWithDefaults() async {
         guard let userId = authManager.currentUser?.id else { return }
         
+        // DEMO DATA - START (Remove in production)
+        // In demo mode, just use demo settings directly
+        self.alertSettings = AlertSettings.demoSettings
+        print("✅ Loaded demo alert settings with bedtime: \(alertSettings.bedtimeSettings.startTime) - \(alertSettings.bedtimeSettings.endTime)")
+        return
+        // DEMO DATA - END (Remove in production)
+        
+        /* PRODUCTION CODE - Uncomment when ready for production
         await withCheckedContinuation { continuation in
             FirebaseManager.shared.usersCollection
                 .document(userId)
@@ -479,18 +651,13 @@ struct SettingsView: View {
                            let settings = try? JSONDecoder().decode(AlertSettings.self, from: alertData) {
                             self.alertSettings = settings
                         } else {
-                            // DEMO DATA - START (Remove in production)
-                            self.alertSettings = AlertSettings.demoSettings
-                            // DEMO DATA - END (Remove in production)
-                            
-                            /* PRODUCTION CODE - Uncomment when ready for production
                             self.alertSettings = AlertSettings.defaultSettings
-                            */
                         }
                         continuation.resume()
                     }
                 }
         }
+        */
     }
     
     private func bindingForApp(_ bundleId: String) -> Binding<Double> {
@@ -501,6 +668,16 @@ struct SettingsView: View {
                 saveAlertSettings()
             }
         )
+    }
+    
+    private func formatTimeForDisplay(_ time: String) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        if let date = formatter.date(from: time) {
+            formatter.dateFormat = "h:mm a"
+            return formatter.string(from: date)
+        }
+        return time
     }
 }
 
@@ -739,6 +916,40 @@ struct SupportView: View {
         }
         .navigationTitle("Help & Support")
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Day Toggle Button for Bedtime Settings
+struct DayToggleButton: View {
+    let day: Int
+    let isSelected: Bool
+    let onToggle: (Bool) -> Void
+    
+    private var dayName: String {
+        switch day {
+        case 1: return "S"
+        case 2: return "M"
+        case 3: return "T"
+        case 4: return "W"
+        case 5: return "T"
+        case 6: return "F"
+        case 7: return "S"
+        default: return ""
+        }
+    }
+    
+    var body: some View {
+        Button(action: {
+            onToggle(!isSelected)
+        }) {
+            Text(dayName)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(isSelected ? .white : .primary)
+                .frame(width: 32, height: 32)
+                .background(isSelected ? Color.purple : Color(.systemGray5))
+                .cornerRadius(16)
+        }
     }
 }
 
