@@ -189,13 +189,15 @@ struct AlertSettings: Codable {
     var enabledCategories: [String]
     var appLimits: [String: Double]
     var bedtimeSettings: BedtimeSettings
+    var disabledApps: [String] // Bundle identifiers of completely disabled apps
     
     static let defaultSettings = AlertSettings(
         isEnabled: true,
         alertTimes: ["12:00", "18:00"],
         enabledCategories: ["Social Networking", "Games", "Entertainment"],
         appLimits: [:],
-        bedtimeSettings: BedtimeSettings.defaultSettings
+        bedtimeSettings: BedtimeSettings.defaultSettings,
+        disabledApps: []
     )
 }
 
@@ -311,7 +313,8 @@ extension AlertSettings {
                 startTime: "22:00", // 10:00 PM
                 endTime: "05:00",   // 5:00 AM
                 enabledDays: [1, 2, 3, 4, 5, 6, 7] // All days
-            )
+            ),
+            disabledApps: []
         )
     }
 }

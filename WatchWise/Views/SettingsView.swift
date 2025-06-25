@@ -60,10 +60,32 @@ struct SettingsView: View {
                         
                         // Paired Devices Section
                         VStack(alignment: .leading, spacing: 16) {
-                            Text("Paired Devices")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal)
+                            HStack {
+                                Text("Paired Devices")
+                                    .font(.headline)
+                                    .foregroundColor(.secondary)
+                                
+                                Spacer()
+                                
+                                // Add Device Button (always visible)
+                                NavigationLink(destination: DevicePairingView()
+                                    .onDisappear {
+                                        Task {
+                                            await loadPairedDevices()
+                                        }
+                                    }
+                                ) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "plus.circle.fill")
+                                            .foregroundColor(.blue)
+                                        Text("Add Device")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                    }
+                                    .foregroundColor(.blue)
+                                }
+                            }
+                            .padding(.horizontal)
                             
                             VStack(spacing: 12) {
                                 if isLoading {
@@ -84,16 +106,6 @@ struct SettingsView: View {
                                         Text("No devices paired")
                                             .foregroundColor(.secondary)
                                         Spacer()
-                                        NavigationLink("Add Device") {
-                                            DevicePairingView()
-                                                .onDisappear {
-                                                    Task {
-                                                        await loadPairedDevices()
-                                                    }
-                                                }
-                                        }
-                                        .font(.subheadline)
-                                        .foregroundColor(.blue)
                                     }
                                     .padding()
                                     .background(Color(.systemGray6))
@@ -140,8 +152,18 @@ struct SettingsView: View {
                                     ForEach(getTopAppsForLimits(), id: \.bundleIdentifier) { app in
                                         AppLimitSlider(
                                             appName: app.appName,
+                                            bundleIdentifier: app.bundleIdentifier,
                                             currentUsage: app.duration,
-                                            timeLimit: bindingForApp(app.bundleIdentifier)
+                                            timeLimit: bindingForApp(app.bundleIdentifier),
+                                            isDisabled: alertSettings.disabledApps.contains(app.bundleIdentifier),
+                                            onDisableToggle: { isDisabled in
+                                                if isDisabled {
+                                                    alertSettings.disabledApps.append(app.bundleIdentifier)
+                                                } else {
+                                                    alertSettings.disabledApps.removeAll { $0 == app.bundleIdentifier }
+                                                }
+                                                saveAlertSettings()
+                                            }
                                         )
                                     }
                                 }
@@ -684,8 +706,11 @@ struct SettingsView: View {
 // MARK: - Clean App Limit Slider (for Settings)
 struct AppLimitSlider: View {
     let appName: String
+    let bundleIdentifier: String
     let currentUsage: TimeInterval
     @Binding var timeLimit: Double // in hours
+    let isDisabled: Bool
+    let onDisableToggle: (Bool) -> Void
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -693,6 +718,7 @@ struct AppLimitSlider: View {
                 Text(appName)
                     .font(.body)
                     .fontWeight(.medium)
+                    .foregroundColor(isDisabled ? .secondary : .primary)
                 
                 Spacer()
                 
@@ -701,18 +727,67 @@ struct AppLimitSlider: View {
                     .foregroundColor(.secondary)
             }
             
-            HStack {
-                Slider(value: $timeLimit, in: 0.25...8.0, step: 0.25)
-                
-                Text("Limit: \(formatLimitDuration(timeLimit))")
-                    .font(.subheadline)
-                    .foregroundColor(.primary)
-                    .frame(width: 80, alignment: .leading)
+            if isDisabled {
+                // Disabled State
+                VStack(spacing: 8) {
+                    HStack {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.red)
+                        Text("App Disabled")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.red)
+                        Spacer()
+                    }
+                    
+                    Button(action: {
+                        onDisableToggle(false)
+                    }) {
+                        Text("Enable App")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(Color.green)
+                            .cornerRadius(8)
+                    }
+                }
+            } else {
+                // Enabled State
+                VStack(spacing: 8) {
+                    HStack {
+                        Slider(value: $timeLimit, in: 0.25...8.0, step: 0.25)
+                        
+                        Text("Limit: \(formatLimitDuration(timeLimit))")
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                            .frame(width: 80, alignment: .leading)
+                    }
+                    
+                    Button(action: {
+                        onDisableToggle(true)
+                    }) {
+                        HStack {
+                            Image(systemName: "xmark.circle")
+                                .foregroundColor(.red)
+                            Text("Disable App")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                        }
+                        .foregroundColor(.red)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                }
             }
         }
         .padding()
-        .background(Color(.systemGray6))
+        .background(isDisabled ? Color(.systemGray5) : Color(.systemGray6))
         .cornerRadius(12)
+        .opacity(isDisabled ? 0.7 : 1.0)
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
