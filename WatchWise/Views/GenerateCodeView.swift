@@ -20,6 +20,7 @@ struct GenerateCodeView: View {
     @State private var alertMessage = ""
     // DEMO DATA - START (Add pairing status listener for demo flow)
     @State private var isPairingCompleted = false
+    @EnvironmentObject var authManager: AuthenticationManager
     // DEMO DATA - END
     
     let onCodeGenerated: (String) -> Void
@@ -188,6 +189,11 @@ struct GenerateCodeView: View {
                 showAlert = true
             }
         }
+        .onAppear {
+            // DEMO DATA - START (Clean up expired pairing attempts on view appear)
+            cleanupExpiredPairingAttempts()
+            // DEMO DATA - END
+        }
     }
     
     private var canProceed: Bool {
@@ -264,35 +270,73 @@ struct GenerateCodeView: View {
     }
     
     // DEMO DATA - START (Listen for pairing completion)
-    // DEMO DATA - START (Listen for pairing completion)
     private func startPairingListener() {
         Task {
             // In demo mode, simulate listening for pairing completion
             // In production, this would listen to Firebase for real-time updates
-            while isCodeGenerated && !isPairingCompleted {
+            while isCodeGenerated && !isPairingCompleted && timeRemaining > 0 {
                 // Check if pairing was completed by checking demo data
                 if UserDefaults.standard.bool(forKey: "demoChildPaired_\(pairCode)") {
                     await MainActor.run {
                         isPairingCompleted = true
                         
                         // DEMO DATA - START (Set child data in UserDefaults for demo)
-                        UserDefaults.standard.set("Savir", forKey: "demoChildName")
-                        UserDefaults.standard.set("Savir's iPhone", forKey: "demoDeviceName")
+                        UserDefaults.standard.set(childName, forKey: "demoChildName")
+                        UserDefaults.standard.set(deviceName, forKey: "demoDeviceName")
                         UserDefaults.standard.set(true, forKey: "demoChildDevicePaired")
                         // DEMO DATA - END
                         
                         // Stop the timer since pairing is complete
                         stopTimer()
                         
+                        // Clean up the pairing flags
+                        UserDefaults.standard.removeObject(forKey: "demoChildPaired_\(pairCode)")
+                        UserDefaults.standard.removeObject(forKey: "demoPairingTimestamp_\(pairCode)")
+                        
                         // Navigate directly to child home by completing onboarding
+                        // DEMO DATA - START (Navigate directly to child home by completing onboarding)
                         authManager.updateChildSetupStatus(isInSetup: false)
                         authManager.updateDevicePairingStatus(isPaired: true)
                         authManager.completeOnboarding()
+                        // Force ContentView to re-evaluate navigation
+                        authManager.objectWillChange.send()
+                        // DEMO DATA - END
                     }
                     break
                 }
-                // Check every 2 seconds
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                // Check every 1 second for faster response
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+            
+            // Clean up expired pairing attempts
+            await MainActor.run {
+                if !isPairingCompleted {
+                    UserDefaults.standard.removeObject(forKey: "demoChildPaired_\(pairCode)")
+                    UserDefaults.standard.removeObject(forKey: "demoPairingTimestamp_\(pairCode)")
+                }
+            }
+        }
+    }
+    // DEMO DATA - END
+    
+    // DEMO DATA - START (Clean up old pairing attempts on app launch)
+    private func cleanupExpiredPairingAttempts() {
+        let userDefaults = UserDefaults.standard
+        let currentTime = Date().timeIntervalSince1970
+        let expiredTime: TimeInterval = 600 // 10 minutes
+        
+        // Get all keys that might be pairing-related
+        let allKeys = userDefaults.dictionaryRepresentation().keys
+        
+        for key in allKeys {
+            if key.hasPrefix("demoPairingTimestamp_") {
+                let timestamp = userDefaults.double(forKey: key)
+                if currentTime - timestamp > expiredTime {
+                    // Remove expired pairing attempt
+                    let codeKey = key.replacingOccurrences(of: "demoPairingTimestamp_", with: "demoChildPaired_")
+                    userDefaults.removeObject(forKey: key)
+                    userDefaults.removeObject(forKey: codeKey)
+                }
             }
         }
     }
@@ -300,7 +344,6 @@ struct GenerateCodeView: View {
     
     // DEMO DATA - START (Add navigation state for demo flow)
     @State private var navigateToPermissions = false
-    @EnvironmentObject var authManager: AuthenticationManager
     // DEMO DATA - END
 }
 

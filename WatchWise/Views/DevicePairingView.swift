@@ -168,13 +168,13 @@ struct DevicePairingView: View {
                     // Update the parent's device pairing status
                     authManager.updateDevicePairingStatus(isPaired: true)
                     
-                    // DEMO DATA - START (Notify child device of successful pairing and clean up)
-                    UserDefaults.standard.set(true, forKey: "demoChildPaired_\(pairCode)")
-                    // Clean up the pairing flag after a short delay to prevent issues
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        UserDefaults.standard.removeObject(forKey: "demoChildPaired_\(pairCode)")
-                    }
+                    // DEMO DATA - START (Store demo data for parent dashboard)
+                    UserDefaults.standard.set(pairingSuccess.childName, forKey: "demoChildName")
+                    UserDefaults.standard.set(pairingSuccess.deviceName, forKey: "demoDeviceName")
+                    UserDefaults.standard.set(true, forKey: "demoParentDevicePaired")
                     // DEMO DATA - END
+                        
+                    
                     
                     alertTitle = "Pairing Successful!"
                     alertMessage = "Successfully connected to \(pairingSuccess.childName)'s device. You can now monitor their screen time."
