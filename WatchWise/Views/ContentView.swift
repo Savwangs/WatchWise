@@ -44,6 +44,9 @@ struct ContentView: View {
                                 // DEMO DATA - START (Child has completed setup, show child home with welcome back)
                                 // Existing child user - go directly to child home with welcome back message
                                 ChildHomeView()
+                                    .onAppear {
+                                        print("👶 Child user - showing ChildHomeView (completed onboarding)")
+                                    }
                                 // DEMO DATA - END
                                 
                                 /* PRODUCTION CODE - Uncomment when ready for production
@@ -70,10 +73,16 @@ struct ContentView: View {
                                             }
                                         )
                                     }
+                                    .onAppear {
+                                        print("👶 Child user - showing GenerateCodeView (in setup)")
+                                    }
                                     // DEMO DATA - END
                                 } else {
                                     // Fallback - shouldn't happen in normal flow
                                     ChildHomeView()
+                                        .onAppear {
+                                            print("👶 Child user - fallback to ChildHomeView")
+                                        }
                                 }
                             }
                         } else {
@@ -82,19 +91,31 @@ struct ContentView: View {
                                 if let currentUser = authManager.currentUser, currentUser.isDevicePaired {
                                     // Device is paired - go to main parent app
                                     MainTabView()
+                                        .onAppear {
+                                            print("👨‍👩‍👧‍👦 Parent user - showing MainTabView (device paired)")
+                                        }
                                 } else {
                                     // Not paired yet - go to device pairing
                                     DevicePairingView()
+                                        .onAppear {
+                                            print("👨‍👩‍👧‍👦 Parent user - showing DevicePairingView (not paired)")
+                                        }
                                 }
                             } else {
                                 // Still need to complete onboarding
                                 DevicePairingView()
+                                    .onAppear {
+                                        print("👨‍👩‍👧‍👦 Parent user - showing DevicePairingView (onboarding incomplete)")
+                                    }
                             }
                         }
                     } else {
                         // User signed up but didn't complete user type selection
                         // This should only happen for users who signed up but didn't complete the flow
                         ParentChildSelectionView(isNewUser: false)
+                            .onAppear {
+                                print("❓ User type not selected - showing ParentChildSelectionView")
+                            }
                     }
                 } else {
                     // User is not signed in

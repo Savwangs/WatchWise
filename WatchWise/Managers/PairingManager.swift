@@ -143,9 +143,9 @@ class PairingManager: ObservableObject {
             isLoading = false
             successMessage = "Successfully paired with \(childName)'s device!"
             
-            // DEMO DATA - START (Set pairing completion flag for child device)
-            UserDefaults.standard.set(true, forKey: "demoChildPaired_\(code)")
-            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "demoPairingTimestamp_\(code)")
+            // DEMO DATA - START (Demo flags are now set in DevicePairingView to avoid conflicts)
+            // UserDefaults.standard.set(true, forKey: "demoChildPaired_\(code)")
+            // UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "demoPairingTimestamp_\(code)")
             // DEMO DATA - END
             
             return .success(PairingSuccess(

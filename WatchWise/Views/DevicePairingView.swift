@@ -172,9 +172,20 @@ struct DevicePairingView: View {
                     UserDefaults.standard.set(pairingSuccess.childName, forKey: "demoChildName")
                     UserDefaults.standard.set(pairingSuccess.deviceName, forKey: "demoDeviceName")
                     UserDefaults.standard.set(true, forKey: "demoParentDevicePaired")
-                    // DEMO DATA - END
-                        
                     
+                    // Set the pairing completion flag for the child device to detect
+                    print("🔗 Setting pairing completion flag for child device with code: \(pairCode)")
+                    print("🔗 Pairing success - childName: \(pairingSuccess.childName), deviceName: \(pairingSuccess.deviceName)")
+                    UserDefaults.standard.set(true, forKey: "demoChildPaired_\(pairCode)")
+                    UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "demoPairingTimestamp_\(pairCode)")
+                    
+                    // Verify the flag was set
+                    let flagSet = UserDefaults.standard.bool(forKey: "demoChildPaired_\(pairCode)")
+                    print("🔗 Verification - pairing flag set for \(pairCode): \(flagSet)")
+                    
+                    // Debug the pairing status
+                    authManager.debugPairingStatus()
+                    // DEMO DATA - END
                     
                     alertTitle = "Pairing Successful!"
                     alertMessage = "Successfully connected to \(pairingSuccess.childName)'s device. You can now monitor their screen time."

@@ -411,6 +411,24 @@ class AuthenticationManager: ObservableObject {
         }
     }
     // DEMO DATA - END
+    
+    // DEMO DATA - START (Debug method to check pairing status)
+    func debugPairingStatus() {
+        print("🔍 DEBUG PAIRING STATUS:")
+        print("  - isAuthenticated: \(isAuthenticated)")
+        print("  - currentUser?.userType: \(currentUser?.userType ?? "nil")")
+        print("  - currentUser?.hasCompletedOnboarding: \(currentUser?.hasCompletedOnboarding ?? false)")
+        print("  - currentUser?.isDevicePaired: \(currentUser?.isDevicePaired ?? false)")
+        print("  - isChildInSetup: \(isChildInSetup)")
+        print("  - hasCompletedOnboarding: \(hasCompletedOnboarding)")
+        
+        // Check demo flags
+        let demoChildPaired = UserDefaults.standard.bool(forKey: "demoChildDevicePaired")
+        let demoParentPaired = UserDefaults.standard.bool(forKey: "demoParentDevicePaired")
+        print("  - demoChildDevicePaired: \(demoChildPaired)")
+        print("  - demoParentDevicePaired: \(demoParentPaired)")
+    }
+    // DEMO DATA - END
 
     /* PRODUCTION CODE - Uncomment when ready for production
     func isReturningChildUser() -> Bool {
