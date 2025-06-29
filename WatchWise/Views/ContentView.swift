@@ -61,20 +61,17 @@ struct ContentView: View {
                             } else {
                                 // New child user - hasn't completed setup yet
                                 if authManager.isChildInSetup {
-                                    // DEMO DATA - START (New child going through setup - start with code generation)
+                                    // NEW: For new child users, start with permission request for Apple Store compliance
                                     NavigationView {
-                                        GenerateCodeView(
-                                            onCodeGenerated: { code in
-                                                print("Code generated: \(code)")
-                                            },
-                                            onPermissionRequested: {
-                                                // After code generation, go to permission request
-                                                // This will be handled by the GenerateCodeView navigation
+                                        PermissionRequestView(
+                                            onPermissionGranted: {
+                                                // After permission is granted, navigate to code generation
+                                                // This will be handled by the PermissionRequestView navigation
                                             }
                                         )
                                     }
                                     .onAppear {
-                                        print("👶 Child user - showing GenerateCodeView (in setup)")
+                                        print("👶 Child user - showing PermissionRequestView (in setup)")
                                     }
                                     // DEMO DATA - END
                                 } else {

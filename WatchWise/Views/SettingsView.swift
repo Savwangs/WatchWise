@@ -22,6 +22,12 @@ struct SettingsView: View {
     @State private var showError = false
     @State private var errorMessage = ""
     
+    // NEW: App deletion functionality
+    @State private var deletedApps: [String] = [] // Bundle identifiers of deleted apps
+    @State private var showUndoAlert = false
+    @State private var appToUndo: String? // Bundle identifier of app to undo deletion
+    @State private var undoTimeout: Timer?
+    
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -163,8 +169,45 @@ struct SettingsView: View {
                                                     alertSettings.disabledApps.removeAll { $0 == app.bundleIdentifier }
                                                 }
                                                 saveAlertSettings()
+                                            },
+                                            onDelete: {
+                                                deleteApp(app.bundleIdentifier)
                                             }
                                         )
+                                    }
+                                    
+                                    // Show undo alert if there are deleted apps
+                                    if !deletedApps.isEmpty {
+                                        VStack(spacing: 8) {
+                                            HStack {
+                                                Image(systemName: "info.circle.fill")
+                                                    .foregroundColor(.orange)
+                                                Text("Recently Deleted Apps")
+                                                    .font(.subheadline)
+                                                    .fontWeight(.medium)
+                                                Spacer()
+                                            }
+                                            
+                                            ForEach(deletedApps, id: \.self) { bundleId in
+                                                if let appName = getAppName(for: bundleId) {
+                                                    HStack {
+                                                        Text(appName)
+                                                            .font(.caption)
+                                                            .foregroundColor(.secondary)
+                                                        Spacer()
+                                                        Button("Undo") {
+                                                            undoAppDeletion(bundleId)
+                                                        }
+                                                        .font(.caption)
+                                                        .foregroundColor(.blue)
+                                                    }
+                                                    .padding(.vertical, 4)
+                                                }
+                                            }
+                                        }
+                                        .padding()
+                                        .background(Color.orange.opacity(0.1))
+                                        .cornerRadius(8)
                                     }
                                 }
                             }
@@ -440,6 +483,11 @@ struct SettingsView: View {
         } message: {
             Text(errorMessage)
         }
+        .onDisappear {
+            // Clean up timer when view disappears
+            undoTimeout?.invalidate()
+            undoTimeout = nil
+        }
     }
     
     // MARK: - Data Loading Methods
@@ -640,7 +688,13 @@ struct SettingsView: View {
                 timestamp: Date().addingTimeInterval(-600)
             )
         ]
-        return Array(demoApps.prefix(6)) // Top 6 apps
+        
+        // Filter out deleted apps
+        let filteredApps = demoApps.filter { app in
+            !deletedApps.contains(app.bundleIdentifier)
+        }
+        
+        return Array(filteredApps.prefix(6)) // Top 6 apps
         // DEMO DATA - END (Remove in production)
         
         /* PRODUCTION CODE - Uncomment when ready for production
@@ -701,6 +755,62 @@ struct SettingsView: View {
         }
         return time
     }
+    
+    // MARK: - App Deletion Functions
+    private func deleteApp(_ bundleId: String) {
+        // Add to deleted apps list
+        if !deletedApps.contains(bundleId) {
+            deletedApps.append(bundleId)
+        }
+        
+        // Remove from app limits
+        alertSettings.appLimits.removeValue(forKey: bundleId)
+        
+        // Remove from disabled apps if present
+        alertSettings.disabledApps.removeAll { $0 == bundleId }
+        
+        // Save settings
+        saveAlertSettings()
+        
+        // Set up undo timeout (5 minutes)
+        undoTimeout?.invalidate()
+        undoTimeout = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { _ in
+            // Permanently remove from deleted apps after timeout
+            deletedApps.removeAll { $0 == bundleId }
+        }
+        
+        print("🗑️ App deleted from monitoring: \(bundleId)")
+    }
+    
+    private func undoAppDeletion(_ bundleId: String) {
+        // Remove from deleted apps
+        deletedApps.removeAll { $0 == bundleId }
+        
+        // Restore default app limit
+        alertSettings.appLimits[bundleId] = 2.0 // Default 2 hours
+        
+        // Save settings
+        saveAlertSettings()
+        
+        // Cancel timeout for this app
+        undoTimeout?.invalidate()
+        
+        print("↩️ App deletion undone: \(bundleId)")
+    }
+    
+    private func getAppName(for bundleId: String) -> String? {
+        // Get app name from demo data or actual data source
+        let demoApps = [
+            "com.burbn.instagram": "Instagram",
+            "com.zhiliaoapp.musically": "TikTok",
+            "com.google.ios.youtube": "YouTube",
+            "com.apple.mobilesafari": "Safari",
+            "com.toyopagroup.picaboo": "Snapchat",
+            "com.apple.MobileSMS": "Messages"
+        ]
+        
+        return demoApps[bundleId]
+    }
 }
 
 // MARK: - Clean App Limit Slider (for Settings)
@@ -711,6 +821,7 @@ struct AppLimitSlider: View {
     @Binding var timeLimit: Double // in hours
     let isDisabled: Bool
     let onDisableToggle: (Bool) -> Void
+    let onDelete: () -> Void
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -725,6 +836,14 @@ struct AppLimitSlider: View {
                 Text("Used: \(formatDuration(currentUsage))")
                     .font(.caption)
                     .foregroundColor(.secondary)
+                
+                // NEW: X button for app deletion
+                Button(action: onDelete) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.red)
+                        .font(.system(size: 16))
+                }
+                .buttonStyle(PlainButtonStyle())
             }
             
             if isDisabled {

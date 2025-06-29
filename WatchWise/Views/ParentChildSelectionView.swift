@@ -116,6 +116,8 @@ struct ParentChildSelectionView: View {
             // Child does NOT complete onboarding here - they need to finish full setup first
             // Set a flag to indicate this is a new child user going through setup
             authManager.isChildInSetup = true
+            // NEW: For new child accounts, they will be directed to PermissionRequestView first
+            // This ensures Apple Store compliance and proper privacy flow
         }
     }
     
