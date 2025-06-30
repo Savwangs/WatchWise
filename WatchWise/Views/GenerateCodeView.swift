@@ -9,7 +9,7 @@ import SwiftUI
 
 struct GenerateCodeView: View {
     @StateObject private var pairingManager = PairingManager()
-    @State private var pairCode: String = ""
+    @State private var pairingCodeData: PairingCodeData?
     @State private var isCodeGenerated = false
     @State private var timeRemaining = 600 // 10 minutes in seconds
     @State private var timer: Timer?
@@ -18,10 +18,8 @@ struct GenerateCodeView: View {
     @State private var showNameInput = true
     @State private var showAlert = false
     @State private var alertMessage = ""
-    // DEMO DATA - START (Add pairing status listener for demo flow)
     @State private var isPairingCompleted = false
     @EnvironmentObject var authManager: AuthenticationManager
-    // DEMO DATA - END
     
     let onCodeGenerated: (String) -> Void
     let onPermissionRequested: () -> Void
@@ -92,20 +90,55 @@ struct GenerateCodeView: View {
             // Code Generation Section
             else {
                 VStack(spacing: 24) {
-                    if isCodeGenerated {
-                        // Display Generated Code
-                        VStack(spacing: 16) {
+                    if isCodeGenerated, let codeData = pairingCodeData {
+                        // Display Generated Code with QR Code
+                        VStack(spacing: 20) {
                             Text("Your Pairing Code")
                                 .font(.headline)
                                 .foregroundColor(.secondary)
                             
+                            // QR Code Display
+                            if let qrCodeImage = codeData.qrCodeImage {
+                                VStack(spacing: 12) {
+                                    Image(uiImage: qrCodeImage)
+                                        .interpolation(.none)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 200, height: 200)
+                                        .background(Color.white)
+                                        .cornerRadius(12)
+                                        .shadow(radius: 4)
+                                    
+                                    Text("Scan this QR code with your parent's device")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .multilineTextAlignment(.center)
+                                }
+                            }
+                            
                             // Code Display
-                            Text(pairCode)
-                                .font(.system(size: 36, weight: .bold, design: .monospaced))
-                                .foregroundColor(.blue)
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .cornerRadius(12)
+                            VStack(spacing: 8) {
+                                Text("Or enter this code manually:")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                
+                                Text(codeData.code)
+                                    .font(.system(size: 36, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.blue)
+                                    .padding()
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(12)
+                                    .onTapGesture {
+                                        UIPasteboard.general.string = codeData.code
+                                        // Show copy feedback
+                                        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                                        impactFeedback.impactOccurred()
+                                    }
+                                
+                                Text("Tap to copy")
+                                    .font(.caption)
+                                    .foregroundColor(.blue)
+                            }
                             
                             // Timer
                             VStack(spacing: 8) {
@@ -127,7 +160,7 @@ struct GenerateCodeView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("1. Have your parent open WatchWise")
                                     Text("2. They should tap 'Pair Device'")
-                                    Text("3. Enter this 6-digit code")
+                                    Text("3. Scan the QR code or enter the 6-digit code")
                                 }
                                 .font(.caption)
                                 .foregroundColor(.secondary)
@@ -190,11 +223,6 @@ struct GenerateCodeView: View {
             }
             
             Spacer()
-            
-            // DEMO DATA - START (Remove continue to permission button for demo mode)
-            // Continue to Permission button removed for demo mode
-            // Will be added back in production
-            // DEMO DATA - END
         }
         .onDisappear {
             stopTimer()
@@ -209,11 +237,6 @@ struct GenerateCodeView: View {
                 alertMessage = error
                 showAlert = true
             }
-        }
-        .onAppear {
-            // DEMO DATA - START (Clean up expired pairing attempts on view appear)
-            cleanupExpiredPairingAttempts()
-            // DEMO DATA - END
         }
     }
     
@@ -235,15 +258,11 @@ struct GenerateCodeView: View {
             
             await MainActor.run {
                 switch result {
-                case .success(let code):
-                    pairCode = code
+                case .success(let codeData):
+                    pairingCodeData = codeData
                     isCodeGenerated = true
-                    timeRemaining = 600 // Reset to 10 minutes
-                    onCodeGenerated(code)
-                    startTimer()
-                    // DEMO DATA - START (Manual navigation - no automatic listener needed)
-                    // startPairingListener() - Removed for manual navigation
-                    // DEMO DATA - END
+                    startTimer(expirationDate: codeData.expiresAt)
+                    onCodeGenerated(codeData.code)
                     
                 case .failure(let error):
                     alertMessage = error.localizedDescription
@@ -254,21 +273,25 @@ struct GenerateCodeView: View {
     }
     
     private func regenerateCode() {
-        stopTimer()
         isCodeGenerated = false
-        pairCode = ""
+        pairingCodeData = nil
+        stopTimer()
         generateCode()
     }
     
-    private func startTimer() {
+    private func startTimer(expirationDate: Date) {
+        stopTimer()
+        
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            if timeRemaining > 0 {
-                timeRemaining -= 1
+            let remaining = Int(expirationDate.timeIntervalSinceNow)
+            if remaining > 0 {
+                timeRemaining = remaining
             } else {
-                // Code expired
                 stopTimer()
-                isCodeGenerated = false
-                pairCode = ""
+                timeRemaining = 0
+                // Code expired
+                alertMessage = "Your pairing code has expired. Please generate a new one."
+                showAlert = true
             }
         }
     }
@@ -276,14 +299,6 @@ struct GenerateCodeView: View {
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
-        // DEMO DATA - START (Only stop pairing listener if timer actually expired)
-        // Don't set isPairingCompleted here - let the pairing listener handle it
-        if timeRemaining <= 0 {
-            print("⏰ Timer expired - code is no longer valid")
-            isCodeGenerated = false
-            pairCode = ""
-        }
-        // DEMO DATA - END
     }
     
     private func formatTime(_ seconds: Int) -> String {
@@ -292,52 +307,17 @@ struct GenerateCodeView: View {
         return String(format: "%02d:%02d", minutes, remainingSeconds)
     }
     
-    // DEMO DATA - START (Clean up old pairing attempts on app launch)
-    private func cleanupExpiredPairingAttempts() {
-        let userDefaults = UserDefaults.standard
-        let currentTime = Date().timeIntervalSince1970
-        let expiredTime: TimeInterval = 600 // 10 minutes
-        
-        // Get all keys that might be pairing-related
-        let allKeys = userDefaults.dictionaryRepresentation().keys
-        
-        for key in allKeys {
-            if key.hasPrefix("demoPairingTimestamp_") {
-                let timestamp = userDefaults.double(forKey: key)
-                if currentTime - timestamp > expiredTime {
-                    // Remove expired pairing attempt
-                    let codeKey = key.replacingOccurrences(of: "demoPairingTimestamp_", with: "demoChildPaired_")
-                    userDefaults.removeObject(forKey: key)
-                    userDefaults.removeObject(forKey: codeKey)
-                }
-            }
-        }
-    }
-    // DEMO DATA - END
-    
-    // DEMO DATA - START (Manual navigation button for child)
+    // DEMO DATA - START
     private func navigateToChildHome() {
-        print("👶 Child manually navigating to home page")
+        // Mark pairing as completed for demo
+        authManager.markPairingCompleted()
         
-        // Set demo data for the child
-        UserDefaults.standard.set(childName, forKey: "demoChildName")
-        UserDefaults.standard.set(deviceName, forKey: "demoDeviceName")
-        UserDefaults.standard.set(true, forKey: "demoChildDevicePaired")
-        
-        // Update auth manager state to complete onboarding
-        authManager.updateChildSetupStatus(isInSetup: false)
-        authManager.updateDevicePairingStatus(isPaired: true)
+        // Complete onboarding for child
         authManager.completeOnboarding()
         
-        // Force ContentView to re-evaluate navigation
-        DispatchQueue.main.async {
-            authManager.objectWillChange.send()
-        }
+        // Navigate to child home
+        NotificationCenter.default.post(name: .showChildHome, object: nil)
     }
-    // DEMO DATA - END
-    
-    // DEMO DATA - START (Add navigation state for demo flow)
-    @State private var navigateToPermissions = false
     // DEMO DATA - END
 }
 

@@ -18,14 +18,16 @@ struct AppUser {
     var hasCompletedOnboarding: Bool
     var userType: String? // Add userType field
     let createdAt: Date
+    var isEmailVerified: Bool
     
-    init(id: String, email: String, isDevicePaired: Bool = false, hasCompletedOnboarding: Bool = false, userType: String? = nil, createdAt: Date = Date()) {
+    init(id: String, email: String, isDevicePaired: Bool = false, hasCompletedOnboarding: Bool = false, userType: String? = nil, createdAt: Date = Date(), isEmailVerified: Bool = false) {
         self.id = id
         self.email = email
         self.isDevicePaired = isDevicePaired
         self.hasCompletedOnboarding = hasCompletedOnboarding
         self.userType = userType
         self.createdAt = createdAt
+        self.isEmailVerified = isEmailVerified
     }
 }
 
@@ -33,12 +35,11 @@ class AuthenticationManager: ObservableObject {
     @Published var isAuthenticated = false
     @Published var currentUser: AppUser?
     @Published var isLoading = true
-    // DEMO DATA - START (Track if user just signed up)
     @Published var isNewSignUp = false
     @Published var isChildInSetup: Bool = false
-    // DEMO DATA - END
+    @Published var showEmailVerificationAlert = false
     
-    private let db = Firestore.firestore()
+    private let firebaseManager = FirebaseManager.shared
     private var authStateListener: AuthStateDidChangeListenerHandle?
     
     // Add this computed property:
@@ -77,6 +78,8 @@ class AuthenticationManager: ObservableObject {
         }
     }
     
+    // MARK: - Day 2: Enhanced Authentication Methods
+    
     func signUp(email: String, password: String, completion: @escaping (Result<Void, Error>) -> Void) {
         print("🚀 Starting sign up process for email: \(email)")
         
@@ -87,10 +90,19 @@ class AuthenticationManager: ObservableObject {
                     completion(.failure(error))
                 } else if let firebaseUser = result?.user {
                     print("✅ User created successfully: \(firebaseUser.uid)")
-                    // DEMO DATA - START (Mark as new sign up)
                     self?.isNewSignUp = true
-                    // DEMO DATA - END
-                    // Create user profile in Firestore WITHOUT userType (will be set later)
+                    
+                    // Send email verification
+                    firebaseUser.sendEmailVerification { error in
+                        if let error = error {
+                            print("🔥 Email verification error: \(error)")
+                        } else {
+                            print("✅ Email verification sent")
+                            self?.showEmailVerificationAlert = true
+                        }
+                    }
+                    
+                    // Create user profile in Firestore
                     self?.createUserProfile(firebaseUser: firebaseUser, completion: completion)
                 }
             }
@@ -107,10 +119,15 @@ class AuthenticationManager: ObservableObject {
                     completion(.failure(error))
                 } else if let firebaseUser = result?.user {
                     print("✅ User signed in successfully: \(firebaseUser.uid)")
-                    // DEMO DATA - START (Mark as existing sign in)
                     self?.isNewSignUp = false
-                    // DEMO DATA - END
-                    // Explicitly load the user profile to ensure state is updated
+                    
+                    // Check if email is verified
+                    if !firebaseUser.isEmailVerified {
+                        print("⚠️ Email not verified")
+                        self?.showEmailVerificationAlert = true
+                    }
+                    
+                    // Load user profile
                     self?.loadUserProfile(userId: firebaseUser.uid)
                     completion(.success(()))
                 }
@@ -118,58 +135,121 @@ class AuthenticationManager: ObservableObject {
         }
     }
     
-    func handleAppleSignIn(authorization: ASAuthorization, completion: @escaping (Result<Void, Error>) -> Void) {
-        guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential else {
-            completion(.failure(NSError(domain: "AppleSignIn", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid Apple ID credential"])))
+    // MARK: - Day 2: Password Reset Functionality
+    
+    func resetPassword(email: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        print("🔄 Starting password reset for email: \(email)")
+        
+        // Validate email format first
+        guard isValidEmail(email) else {
+            let error = NSError(domain: "Authentication", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid email format"])
+            completion(.failure(error))
             return
         }
         
-        guard let nonce = getCurrentNonce() else {
-            completion(.failure(NSError(domain: "AppleSignIn", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid nonce"])))
-            return
-        }
-        
-        guard let appleIDToken = appleIDCredential.identityToken,
-              let idTokenString = String(data: appleIDToken, encoding: .utf8) else {
-            completion(.failure(NSError(domain: "AppleSignIn", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unable to fetch identity token"])))
-            return
-        }
-        
-        let credential = OAuthProvider.credential(withProviderID: "apple.com",
-                                                  idToken: idTokenString,
-                                                  rawNonce: nonce)
-        
-        Auth.auth().signIn(with: credential) { [weak self] result, error in
+        Auth.auth().sendPasswordReset(withEmail: email) { error in
             DispatchQueue.main.async {
                 if let error = error {
-                    completion(.failure(error))
-                } else if let firebaseUser = result?.user {
-                    print("✅ Apple Sign In successful: \(firebaseUser.uid)")
-                    // Create user profile for Apple users
-                    self?.createUserProfile(firebaseUser: firebaseUser, completion: completion)
+                    print("🔥 Password reset error: \(error.localizedDescription)")
+                    print("🔥 Error code: \(error._code)")
+                    print("🔥 Error domain: \(error._domain)")
+                    
+                    // Provide more specific error messages
+                    let specificError: Error
+                    switch error._code {
+                    case AuthErrorCode.userNotFound.rawValue:
+                        specificError = NSError(domain: "Authentication", code: -1, userInfo: [NSLocalizedDescriptionKey: "No account found with this email address"])
+                    case AuthErrorCode.invalidEmail.rawValue:
+                        specificError = NSError(domain: "Authentication", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid email address"])
+                    case AuthErrorCode.tooManyRequests.rawValue:
+                        specificError = NSError(domain: "Authentication", code: -1, userInfo: [NSLocalizedDescriptionKey: "Too many requests. Please try again later"])
+                    default:
+                        specificError = error
+                    }
+                    
+                    completion(.failure(specificError))
+                } else {
+                    print("✅ Password reset email sent successfully")
+                    completion(.success(()))
                 }
             }
         }
     }
     
-    // Helper method for Apple Sign In nonce (you'll need to implement this)
+    // Helper method to validate email format
+    private func isValidEmail(_ email: String) -> Bool {
+        let emailRegex = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}"
+        let emailPredicate = NSPredicate(format:"SELF MATCHES %@", emailRegex)
+        return emailPredicate.evaluate(with: email)
+    }
+    
+    // MARK: - Day 2: Email Verification
+    
+    func resendEmailVerification(completion: @escaping (Result<Void, Error>) -> Void) {
+        guard let currentUser = Auth.auth().currentUser else {
+            completion(.failure(FirebaseManager.FirebaseError.userNotAuthenticated))
+            return
+        }
+        
+        print("🔄 Resending email verification")
+        
+        currentUser.sendEmailVerification { error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("🔥 Email verification error: \(error)")
+                    completion(.failure(error))
+                } else {
+                    print("✅ Email verification resent")
+                    completion(.success(()))
+                }
+            }
+        }
+    }
+    
+    func checkEmailVerification(completion: @escaping (Bool) -> Void) {
+        guard let currentUser = Auth.auth().currentUser else {
+            completion(false)
+            return
+        }
+        
+        currentUser.reload { error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("🔥 Error reloading user: \(error)")
+                    completion(false)
+                } else {
+                    let isVerified = currentUser.isEmailVerified
+                    print("📧 Email verification status: \(isVerified)")
+                    completion(isVerified)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Apple Sign In (Placeholder for Day 14)
+    
+    func handleAppleSignIn(authorization: ASAuthorization, completion: @escaping (Result<Void, Error>) -> Void) {
+        // This will be fully implemented on Day 14 with Apple Developer Account
+        completion(.failure(NSError(domain: "AppleSignIn", code: -1, userInfo: [NSLocalizedDescriptionKey: "Apple Sign In will be available on Day 14"])))
+    }
+    
     private func getCurrentNonce() -> String? {
-        // Implement nonce generation for Apple Sign In
-        // This is a simplified version - you should implement proper nonce generation
+        // This will be implemented on Day 14
         return UUID().uuidString
     }
     
     func signOut() {
         do {
             try Auth.auth().signOut()
-            // DEMO DATA - START (Reset sign up flag)
             isNewSignUp = false
-            // DEMO DATA - END
+            showEmailVerificationAlert = false
             print("✅ User signed out successfully")
         } catch {
             print("🔥 Sign out error: \(error.localizedDescription)")
         }
     }
+    
+    // MARK: - Day 2: Updated User Profile Management
     
     private func createUserProfile(firebaseUser: FirebaseAuth.User, completion: @escaping (Result<Void, Error>) -> Void) {
         print("📝 Creating user profile for: \(firebaseUser.uid)")
@@ -178,18 +258,20 @@ class AuthenticationManager: ObservableObject {
             "email": firebaseUser.email ?? "",
             "isDevicePaired": false,
             "hasCompletedOnboarding": false,
-            "userType": NSNull(), // Explicitly set as null for new users - will be set after user selection
-            "createdAt": Timestamp()
+            "userType": NSNull(), // Will be set after user selection
+            "createdAt": Timestamp(),
+            "lastActiveAt": Timestamp(),
+            "isEmailVerified": firebaseUser.isEmailVerified
         ]
         
-        db.collection("parents").document(firebaseUser.uid).setData(userData) { [weak self] error in
+        // Use the correct collection from Day 1
+        firebaseManager.usersCollection.document(firebaseUser.uid).setData(userData) { [weak self] error in
             DispatchQueue.main.async {
                 if let error = error {
                     print("🔥 Firestore Error: \(error)")
                     completion(.failure(error))
                 } else {
                     print("✅ User profile created successfully")
-                    // Don't set the user here - let the auth state listener handle it
                     completion(.success(()))
                 }
             }
@@ -199,7 +281,8 @@ class AuthenticationManager: ObservableObject {
     private func loadUserProfile(userId: String) {
         print("📖 Loading user profile for: \(userId)")
         
-        db.collection("parents").document(userId).getDocument { [weak self] snapshot, error in
+        // Use the correct collection from Day 1
+        firebaseManager.usersCollection.document(userId).getDocument { [weak self] snapshot, error in
             DispatchQueue.main.async {
                 if let error = error {
                     print("🔥 Error loading user profile: \(error.localizedDescription)")
@@ -252,7 +335,8 @@ class AuthenticationManager: ObservableObject {
                     isDevicePaired: data["isDevicePaired"] as? Bool ?? false,
                     hasCompletedOnboarding: data["hasCompletedOnboarding"] as? Bool ?? false,
                     userType: userType,
-                    createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
+                    createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
+                    isEmailVerified: data["isEmailVerified"] as? Bool ?? false
                 )
                 
                 print("✅ User profile loaded: \(appUser.email), userType: \(userType ?? "nil"), onboarding: \(appUser.hasCompletedOnboarding)")
@@ -269,23 +353,25 @@ class AuthenticationManager: ObservableObject {
                 self?.isAuthenticated = true
                 self?.isLoading = false
 
-                // DEMO DATA - START (Reset new signup flag after successful pairing for new users)
+                // Reset new signup flag after successful pairing for new users
                 if self?.isNewSignUp == true && appUser.hasCompletedOnboarding {
                     self?.isNewSignUp = false
                 }
-                // DEMO DATA - END
             }
         }
     }
     
-    // Method to update user type - only called from ParentChildSelectionView
+    // MARK: - Day 2: Updated User Type Management
+    
     func updateUserType(_ userType: String) {
         guard let userId = currentUser?.id else { return }
         
         print("📝 Updating user type to: \(userType) for user: \(userId)")
         
-        db.collection("parents").document(userId).updateData([
-            "userType": userType
+        // Use the correct collection from Day 1
+        firebaseManager.usersCollection.document(userId).updateData([
+            "userType": userType,
+            "lastActiveAt": Timestamp()
         ]) { [weak self] error in
             DispatchQueue.main.async {
                 if let error = error {
@@ -315,8 +401,10 @@ class AuthenticationManager: ObservableObject {
         
         print("🎯 Completing onboarding for: \(userId)")
         
-        db.collection("parents").document(userId).updateData([
-            "hasCompletedOnboarding": true
+        // Use the correct collection from Day 1
+        firebaseManager.usersCollection.document(userId).updateData([
+            "hasCompletedOnboarding": true,
+            "lastActiveAt": Timestamp()
         ]) { [weak self] error in
             DispatchQueue.main.async {
                 if let error = error {
@@ -333,17 +421,15 @@ class AuthenticationManager: ObservableObject {
         }
     }
     
-    // DEMO DATA - START (Methods for managing child setup status)
-    func updateChildSetupStatus(isInSetup: Bool) {
-        self.isChildInSetup = isInSetup
-    }
-    // DEMO DATA - END
+    // MARK: - Day 2: Updated Device Pairing Status
     
     func updateDevicePairingStatus(isPaired: Bool) {
         guard let userId = currentUser?.id else { return }
         
-        db.collection("parents").document(userId).updateData([
-            "isDevicePaired": isPaired
+        // Use the correct collection from Day 1
+        firebaseManager.usersCollection.document(userId).updateData([
+            "isDevicePaired": isPaired,
+            "lastActiveAt": Timestamp()
         ]) { [weak self] error in
             DispatchQueue.main.async {
                 if let error = error {
@@ -365,8 +451,10 @@ class AuthenticationManager: ObservableObject {
         
         print("🎯 Updating onboarding status to: \(completed) for: \(userId)")
         
-        db.collection("parents").document(userId).updateData([
-            "hasCompletedOnboarding": completed
+        // Use the correct collection from Day 1
+        firebaseManager.usersCollection.document(userId).updateData([
+            "hasCompletedOnboarding": completed,
+            "lastActiveAt": Timestamp()
         ]) { [weak self] error in
             DispatchQueue.main.async {
                 if let error = error {
@@ -383,7 +471,12 @@ class AuthenticationManager: ObservableObject {
         }
     }
     
-    // Debug method to check current state
+    // MARK: - Day 2: Helper Methods
+    
+    func updateChildSetupStatus(isInSetup: Bool) {
+        self.isChildInSetup = isInSetup
+    }
+    
     func debugCurrentState() {
         print("🔍 DEBUG STATE:")
         print("  - isAuthenticated: \(isAuthenticated)")
@@ -391,28 +484,23 @@ class AuthenticationManager: ObservableObject {
         print("  - currentUser: \(currentUser?.email ?? "nil")")
         print("  - userType: \(currentUser?.userType ?? "nil")")
         print("  - hasCompletedOnboarding: \(hasCompletedOnboarding)")
+        print("  - isEmailVerified: \(currentUser?.isEmailVerified ?? false)")
     }
     
-    // DEMO DATA - START (Helper method to check if child is returning user)
     func isReturningChildUser() -> Bool {
         guard let currentUser = currentUser else { return false }
-        // Return true only if it's a Child user, has completed onboarding, AND is not a new sign up
         return currentUser.userType == "Child" &&
                currentUser.hasCompletedOnboarding &&
                !isNewSignUp
     }
-    // DEMO DATA - END
     
-    // DEMO DATA - START (Function to mark pairing as completed)
     func markPairingCompleted() {
         if isNewSignUp {
             isNewSignUp = false
             print("✅ Pairing completed - reset new signup flag")
         }
     }
-    // DEMO DATA - END
     
-    // DEMO DATA - START (Debug method to check pairing status)
     func debugPairingStatus() {
         print("🔍 DEBUG PAIRING STATUS:")
         print("  - isAuthenticated: \(isAuthenticated)")
@@ -421,21 +509,6 @@ class AuthenticationManager: ObservableObject {
         print("  - currentUser?.isDevicePaired: \(currentUser?.isDevicePaired ?? false)")
         print("  - isChildInSetup: \(isChildInSetup)")
         print("  - hasCompletedOnboarding: \(hasCompletedOnboarding)")
-        
-        // Check demo flags
-        let demoChildPaired = UserDefaults.standard.bool(forKey: "demoChildDevicePaired")
-        let demoParentPaired = UserDefaults.standard.bool(forKey: "demoParentDevicePaired")
-        print("  - demoChildDevicePaired: \(demoChildPaired)")
-        print("  - demoParentDevicePaired: \(demoParentPaired)")
     }
-    // DEMO DATA - END
-
-    /* PRODUCTION CODE - Uncomment when ready for production
-    func isReturningChildUser() -> Bool {
-        guard let currentUser = currentUser else { return false }
-        return currentUser.userType == "Child" &&
-               currentUser.hasCompletedOnboarding &&
-               currentUser.isDevicePaired
-    }
-    */
 }
+

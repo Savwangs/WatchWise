@@ -17,6 +17,8 @@ struct AuthenticationView: View {
     @State private var alertMessage = ""
     @State private var isLoading = false
     @State private var showUserTypeSelection = false
+    @State private var showPasswordReset = false
+    @State private var showEmailVerificationAlert = false
     
     var body: some View {
         NavigationStack {
@@ -86,6 +88,15 @@ struct AuthenticationView: View {
                         }
                         .padding(.horizontal, 32)
                         
+                        // Password Reset Link (only for sign in)
+                        if !isSignUp {
+                            Button("Forgot Password?") {
+                                showPasswordReset = true
+                            }
+                            .foregroundColor(.blue)
+                            .font(.footnote)
+                        }
+                        
                         // Action Buttons
                         VStack(spacing: 16) {
                             Button(action: handleAuthentication) {
@@ -104,7 +115,7 @@ struct AuthenticationView: View {
                             .cornerRadius(12)
                             .disabled(isLoading || !isFormValid)
                             
-                            // Sign in with Apple
+                            // Sign in with Apple (placeholder for Day 14)
                             SignInWithAppleButton(
                                 onRequest: { request in
                                     request.requestedScopes = [.fullName, .email]
@@ -115,6 +126,10 @@ struct AuthenticationView: View {
                             )
                             .frame(height: 50)
                             .cornerRadius(12)
+                            .onTapGesture {
+                                handleAppleSignInButtonTap()
+                            }
+                            .opacity(0.7)
                         }
                         .padding(.horizontal, 32)
                         
@@ -128,6 +143,20 @@ struct AuthenticationView: View {
             Button("OK") { }
         } message: {
             Text(alertMessage)
+        }
+        .alert("Email Verification Required", isPresented: $authManager.showEmailVerificationAlert) {
+            Button("Resend Email") {
+                resendEmailVerification()
+            }
+            Button("Check Again") {
+                checkEmailVerification()
+            }
+            Button("OK") { }
+        } message: {
+            Text("Please check your email and verify your account before continuing. You can resend the verification email or check if you've already verified.")
+        }
+        .sheet(isPresented: $showPasswordReset) {
+            PasswordResetView()
         }
     }
     
@@ -201,42 +230,150 @@ struct AuthenticationView: View {
         }
     }
     
-    private func checkExistingChildAccount() {
-        guard let userId = authManager.currentUser?.id else {
-            print("✅ No current user, proceeding with normal flow")
-            return
-        }
-        
-        // DEMO DATA - START (Add delay to ensure auth state is fully loaded)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            // Check if user has a stored user type
-            let storedUserType = UserDefaults.standard.string(forKey: "userType")
-            
-            if storedUserType == "Child" {
-                // This is a child account, check if already paired
-                DatabaseManager.shared.checkChildAccountPairing(userId: userId) { result in
-                    DispatchQueue.main.async {
-                        switch result {
-                        case .success(let isPaired):
-                            if isPaired {
-                                // Child is already paired, complete onboarding and go straight to PairedConfirmationView
-                                print("✅ Child account already paired, skipping setup")
-                                self.authManager.completeOnboarding()
-                            } else {
-                                // Child exists but not paired, go through normal pairing flow
-                                print("✅ Child account exists but not paired, continuing setup")
-                            }
-                        case .failure(let error):
-                            print("🔥 Error checking child pairing: \(error)")
-                            // On error, continue with normal flow
-                        }
-                    }
+    // Add this method to handle Apple Sign In button tap
+    private func handleAppleSignInButtonTap() {
+        alertMessage = "Apple Sign In will be available on Day 14 when we set up the Apple Developer account. For now, please use email/password authentication."
+        showAlert = true
+    }
+    
+    private func resendEmailVerification() {
+        authManager.resendEmailVerification { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success:
+                    alertMessage = "Verification email sent successfully!"
+                    showAlert = true
+                case .failure(let error):
+                    alertMessage = "Failed to send verification email: \(error.localizedDescription)"
+                    showAlert = true
                 }
-            } else {
-                // Not a child account or no stored type, continue normal flow
-                print("✅ Not a child account or no stored type, continuing normal flow")
             }
         }
-        // DEMO DATA - END
+    }
+    
+    private func checkEmailVerification() {
+        authManager.checkEmailVerification { isVerified in
+            DispatchQueue.main.async {
+                if isVerified {
+                    alertMessage = "Email verified successfully! You can now sign in."
+                    showAlert = true
+                    authManager.showEmailVerificationAlert = false
+                } else {
+                    alertMessage = "Email not yet verified. Please check your inbox and click the verification link."
+                    showAlert = true
+                }
+            }
+        }
+    }
+    
+    private func checkExistingChildAccount() {
+        // This method checks if the user is a returning child user
+        // and handles the appropriate navigation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            if authManager.isReturningChildUser() {
+                // Navigate to child home view
+                NotificationCenter.default.post(name: .showChildHome, object: nil)
+            }
+        }
+    }
+}
+
+// MARK: - Password Reset View
+
+struct PasswordResetView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var email = ""
+    @State private var isLoading = false
+    @State private var showAlert = false
+    @State private var alertMessage = ""
+    @State private var isSuccess = false
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                // Header
+                VStack(spacing: 8) {
+                    Image(systemName: "lock.rotation")
+                        .font(.system(size: 50))
+                        .foregroundColor(.blue)
+                    
+                    Text("Reset Password")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("Enter your email address and we'll send you a link to reset your password.")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.top, 20)
+                
+                // Email Field
+                TextField("Email", text: $email)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .textContentType(.emailAddress)
+                    .keyboardType(.emailAddress)
+                    .autocapitalization(.none)
+                    .padding(.horizontal)
+                
+                // Reset Button
+                Button(action: resetPassword) {
+                    if isLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    } else {
+                        Text("Send Reset Link")
+                            .font(.headline)
+                    }
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.blue)
+                .cornerRadius(12)
+                .disabled(isLoading || email.isEmpty)
+                .padding(.horizontal)
+                
+                Spacer()
+            }
+            .navigationTitle("Password Reset")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .alert(isSuccess ? "Success" : "Error", isPresented: $showAlert) {
+            Button("OK") {
+                if isSuccess {
+                    dismiss()
+                }
+            }
+        } message: {
+            Text(alertMessage)
+        }
+    }
+    
+    private func resetPassword() {
+        isLoading = true
+        
+        AuthenticationManager().resetPassword(email: email) { result in
+            DispatchQueue.main.async {
+                isLoading = false
+                switch result {
+                case .success:
+                    isSuccess = true
+                    alertMessage = "Password reset email sent successfully! Please check your inbox."
+                    showAlert = true
+                case .failure(let error):
+                    isSuccess = false
+                    alertMessage = "Failed to send reset email: \(error.localizedDescription)"
+                    showAlert = true
+                }
+            }
+        }
     }
 }

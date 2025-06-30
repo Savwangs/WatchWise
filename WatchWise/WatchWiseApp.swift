@@ -21,7 +21,25 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         FirebaseApp.configure()
         
         // Initialize Firebase Manager
-        _ = FirebaseManager.shared
+        let firebaseManager = FirebaseManager.shared
+        firebaseManager.configureFirebase()
+        
+        // Test Firebase connection
+        firebaseManager.testFirebaseConnection { success in
+            if success {
+                print("✅ Firebase connection test passed")
+            } else {
+                print("❌ Firebase connection test failed")
+            }
+        }
+        
+        // Validate Firebase collections
+        firebaseManager.validateCollections { results in
+            print("📊 Firebase collections validation:")
+            for (collection, isValid) in results {
+                print("  \(collection): \(isValid ? "✅" : "❌")")
+            }
+        }
         
         // Configure Firebase Messaging
         Messaging.messaging().delegate = self

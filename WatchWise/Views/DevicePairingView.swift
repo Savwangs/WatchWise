@@ -11,6 +11,8 @@ import SwiftUI
 import FirebaseFirestore
 import Foundation
 import FirebaseAuth
+import AVFoundation
+import AudioToolbox
 
 struct DevicePairingView: View {
     @EnvironmentObject var authManager: AuthenticationManager
@@ -20,6 +22,8 @@ struct DevicePairingView: View {
     @State private var alertTitle = ""
     @State private var alertMessage = ""
     @State private var isSuccess = false
+    @State private var showQRScanner = false
+    @State private var showCameraPermissionAlert = false
     
     var body: some View {
         NavigationStack {
@@ -63,8 +67,44 @@ struct DevicePairingView: View {
                     
                     InstructionRow(
                         number: "3",
-                        text: "Enter the 6-digit code below:"
+                        text: "Scan the QR code or enter the 6-digit code below:"
                     )
+                }
+                .padding(.horizontal, 32)
+                
+                // QR Code Scanner Button
+                VStack(spacing: 16) {
+                    Button(action: {
+                        checkCameraPermissionAndShowScanner()
+                    }) {
+                        HStack {
+                            Image(systemName: "qrcode.viewfinder")
+                                .font(.title2)
+                            Text("Scan QR Code")
+                                .font(.headline)
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.green)
+                        .cornerRadius(12)
+                    }
+                    
+                    // Divider
+                    HStack {
+                        Rectangle()
+                            .frame(height: 1)
+                            .foregroundColor(.gray.opacity(0.3))
+                        
+                        Text("OR")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 16)
+                        
+                        Rectangle()
+                            .frame(height: 1)
+                            .foregroundColor(.gray.opacity(0.3))
+                    }
                 }
                 .padding(.horizontal, 32)
                 
@@ -129,6 +169,22 @@ struct DevicePairingView: View {
         } message: {
             Text(alertMessage)
         }
+        .alert("Camera Permission Required", isPresented: $showCameraPermissionAlert) {
+            Button("Settings") {
+                if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(settingsUrl)
+                }
+            }
+            Button("Cancel") { }
+        } message: {
+            Text("Camera access is required to scan QR codes. Please enable it in Settings.")
+        }
+        .sheet(isPresented: $showQRScanner) {
+            QRCodeScannerView { scannedCode in
+                pairCode = scannedCode
+                showQRScanner = false
+            }
+        }
         .onChange(of: pairingManager.errorMessage) { errorMessage in
             if let error = errorMessage {
                 alertTitle = "Pairing Failed"
@@ -144,6 +200,35 @@ struct DevicePairingView: View {
                 isSuccess = true
                 showAlert = true
             }
+        }
+    }
+    
+    private func checkCameraPermissionAndShowScanner() {
+        print("🔍 Checking camera permission...")
+        
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            print("✅ Camera authorized, showing scanner")
+            showQRScanner = true
+        case .notDetermined:
+            print("⏳ Camera permission not determined, requesting...")
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        print("✅ Camera permission granted, showing scanner")
+                        self.showQRScanner = true
+                    } else {
+                        print("❌ Camera permission denied")
+                        self.showCameraPermissionAlert = true
+                    }
+                }
+            }
+        case .denied, .restricted:
+            print("❌ Camera permission denied/restricted")
+            showCameraPermissionAlert = true
+        @unknown default:
+            print("❌ Unknown camera permission status")
+            showCameraPermissionAlert = true
         }
     }
     
@@ -226,4 +311,185 @@ struct InstructionRow: View {
 #Preview {
     DevicePairingView()
         .environmentObject(AuthenticationManager())
+}
+
+// MARK: - QR Code Scanner View
+
+struct QRCodeScannerView: UIViewControllerRepresentable {
+    let onCodeScanned: (String) -> Void
+    
+    func makeUIViewController(context: Context) -> QRScannerViewController {
+        let scanner = QRScannerViewController()
+        scanner.delegate = context.coordinator
+        return scanner
+    }
+    
+    func updateUIViewController(_ uiViewController: QRScannerViewController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onCodeScanned: onCodeScanned)
+    }
+    
+    class Coordinator: NSObject, QRScannerViewControllerDelegate {
+        let onCodeScanned: (String) -> Void
+        
+        init(onCodeScanned: @escaping (String) -> Void) {
+            self.onCodeScanned = onCodeScanned
+        }
+        
+        func didScanCode(_ code: String) {
+            onCodeScanned(code)
+        }
+    }
+}
+
+// MARK: - QR Scanner View Controller
+
+protocol QRScannerViewControllerDelegate: AnyObject {
+    func didScanCode(_ code: String)
+}
+
+class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+    weak var delegate: QRScannerViewControllerDelegate?
+    private var captureSession: AVCaptureSession?
+    private var previewLayer: AVCaptureVideoPreviewLayer?
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setupCamera()
+        setupUI()
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        startSession()
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        stopSession()
+    }
+    
+    private func setupCamera() {
+        print("📷 Setting up camera...")
+        
+        guard let videoCaptureDevice = AVCaptureDevice.default(for: .video) else {
+            print("❌ No video capture device available")
+            return
+        }
+        
+        let videoInput: AVCaptureDeviceInput
+        
+        do {
+            videoInput = try AVCaptureDeviceInput(device: videoCaptureDevice)
+            print("✅ Video input created successfully")
+        } catch {
+            print("❌ Failed to create video input: \(error)")
+            return
+        }
+        
+        captureSession = AVCaptureSession()
+        
+        if captureSession?.canAddInput(videoInput) == true {
+            captureSession?.addInput(videoInput)
+            print("✅ Video input added to session")
+        } else {
+            print("❌ Cannot add video input to session")
+            return
+        }
+        
+        let metadataOutput = AVCaptureMetadataOutput()
+        
+        if captureSession?.canAddOutput(metadataOutput) == true {
+            captureSession?.addOutput(metadataOutput)
+            print("✅ Metadata output added to session")
+            
+            metadataOutput.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
+            metadataOutput.metadataObjectTypes = [.qr]
+            print("✅ QR code detection enabled")
+        } else {
+            print("❌ Cannot add metadata output to session")
+            return
+        }
+        
+        print("✅ Camera setup completed successfully")
+    }
+    
+    private func setupUI() {
+        view.backgroundColor = UIColor.black
+        
+        // Preview layer
+        previewLayer = AVCaptureVideoPreviewLayer(session: captureSession!)
+        previewLayer?.frame = view.layer.bounds
+        previewLayer?.videoGravity = .resizeAspectFill
+        view.layer.addSublayer(previewLayer!)
+        
+        // Close button
+        let closeButton = UIButton(type: .system)
+        closeButton.setTitle("Cancel", for: .normal)
+        closeButton.setTitleColor(.white, for: .normal)
+        closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+        closeButton.layer.cornerRadius = 8
+        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(closeButton)
+        
+        NSLayoutConstraint.activate([
+            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
+            closeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            closeButton.widthAnchor.constraint(equalToConstant: 80),
+            closeButton.heightAnchor.constraint(equalToConstant: 40)
+        ])
+        
+        // Instructions label
+        let instructionsLabel = UILabel()
+        instructionsLabel.text = "Position the QR code within the frame"
+        instructionsLabel.textColor = .white
+        instructionsLabel.textAlignment = .center
+        instructionsLabel.backgroundColor = UIColor.black.withAlphaComponent(0.7)
+        instructionsLabel.layer.cornerRadius = 8
+        instructionsLabel.font = UIFont.systemFont(ofSize: 16)
+        instructionsLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(instructionsLabel)
+        
+        NSLayoutConstraint.activate([
+            instructionsLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            instructionsLabel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -32),
+            instructionsLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
+            instructionsLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32)
+        ])
+    }
+    
+    private func startSession() {
+        print("🎬 Starting camera session...")
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.captureSession?.startRunning()
+            print("✅ Camera session started")
+        }
+    }
+    
+    private func stopSession() {
+        print("⏹️ Stopping camera session...")
+        captureSession?.stopRunning()
+        print("✅ Camera session stopped")
+    }
+    
+    @objc private func closeTapped() {
+        dismiss(animated: true)
+    }
+    
+    // MARK: - AVCaptureMetadataOutputObjectsDelegate
+    
+    func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
+        if let metadataObject = metadataObjects.first {
+            guard let readableObject = metadataObject as? AVMetadataMachineReadableCodeObject else { return }
+            guard let stringValue = readableObject.stringValue else { return }
+            
+            // Validate that it's a 6-digit code
+            if stringValue.count == 6 && stringValue.allSatisfy({ $0.isNumber }) {
+                AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
+                delegate?.didScanCode(stringValue)
+            }
+        }
+    }
 }
