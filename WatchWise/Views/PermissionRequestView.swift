@@ -7,6 +7,7 @@
 
 import SwiftUI
 import FamilyControls
+import FirebaseAuth
 
 struct PermissionRequestView: View {
     @State private var isLoading = false
@@ -14,14 +15,25 @@ struct PermissionRequestView: View {
     @State private var alertMessage = ""
     @State private var permissionGranted = false
     @State private var navigateToCodeGeneration = false
+    @EnvironmentObject var authManager: AuthenticationManager
     
     let onPermissionGranted: () -> Void
     
     var body: some View {
         NavigationStack {
             VStack(spacing: 40) {
-                // Header
+                // Header with Sign Out Button
                 VStack(spacing: 16) {
+                    HStack {
+                        Spacer()
+                        Button(action: signOut) {
+                            Text("Sign Out")
+                                .font(.subheadline)
+                                .foregroundColor(.red)
+                        }
+                    }
+                    .padding(.horizontal)
+                    
                     Image(systemName: "shield.checkered")
                         .font(.system(size: 60))
                         .foregroundStyle(
@@ -228,6 +240,16 @@ struct PermissionRequestView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 navigateToCodeGeneration = true
             }
+        }
+    }
+    
+    private func signOut() {
+        do {
+            try Auth.auth().signOut()
+            authManager.signOut()
+        } catch {
+            alertMessage = "Error signing out: \(error.localizedDescription)"
+            showAlert = true
         }
     }
 }

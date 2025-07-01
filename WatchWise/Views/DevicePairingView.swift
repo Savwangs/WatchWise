@@ -13,6 +13,7 @@ import Foundation
 import FirebaseAuth
 import AVFoundation
 import AudioToolbox
+import PhotosUI
 
 struct DevicePairingView: View {
     @EnvironmentObject var authManager: AuthenticationManager
@@ -28,18 +29,6 @@ struct DevicePairingView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 32) {
-                // Top Navigation Bar
-                HStack {
-                    Spacer()
-                    
-                    Button("Sign Out") {
-                        authManager.signOut()
-                    }
-                    .foregroundColor(.red)
-                    .padding(.trailing)
-                }
-                .padding(.top, 10)
-                
                 // Header
                 VStack(spacing: 16) {
                     Image(systemName: "link.circle.fill")
@@ -140,6 +129,42 @@ struct DevicePairingView: View {
                     .background(pairCode.count == 6 && !pairingManager.isLoading ? Color.blue : Color.gray)
                     .cornerRadius(12)
                     .disabled(pairCode.count != 6 || pairingManager.isLoading)
+                    
+                    // Debug button for testing Firebase permissions
+                    Button(action: {
+                        Task {
+                            await pairingManager.testFirebasePermissions()
+                        }
+                    }) {
+                        Text("Test Firebase Permissions")
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                    .padding(.top, 8)
+                    
+                    // Debug button for testing exact pairing update
+                    Button(action: {
+                        Task {
+                            await pairingManager.testExactPairingUpdate()
+                        }
+                    }) {
+                        Text("Test Exact Pairing Update")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                    .padding(.top, 4)
+                    
+                    // Debug button for testing basic Firebase operations
+                    Button(action: {
+                        Task {
+                            await pairingManager.testBasicFirebaseOperations()
+                        }
+                    }) {
+                        Text("Test Basic Firebase Operations")
+                            .font(.caption)
+                            .foregroundColor(.purple)
+                    }
+                    .padding(.top, 4)
                 }
                 .padding(.horizontal, 32)
                 
@@ -158,7 +183,16 @@ struct DevicePairingView: View {
                 .padding(.horizontal, 32)
                 .padding(.bottom, 32)
             }
-            .navigationBarHidden(true)
+            .navigationBarHidden(false)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Sign Out") {
+                        authManager.signOut()
+                    }
+                    .foregroundColor(.red)
+                }
+            }
         }
         .alert(alertTitle, isPresented: $showAlert) {
             Button("OK") {
@@ -349,7 +383,7 @@ protocol QRScannerViewControllerDelegate: AnyObject {
     func didScanCode(_ code: String)
 }
 
-class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     weak var delegate: QRScannerViewControllerDelegate?
     private var captureSession: AVCaptureSession?
     private var previewLayer: AVCaptureVideoPreviewLayer?
@@ -374,7 +408,9 @@ class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsD
         print("📷 Setting up camera...")
         
         guard let videoCaptureDevice = AVCaptureDevice.default(for: .video) else {
-            print("❌ No video capture device available")
+            print("❌ No video capture device available (simulator)")
+            // In simulator, just show the photo library option
+            setupUIForSimulator()
             return
         }
         
@@ -385,6 +421,7 @@ class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsD
             print("✅ Video input created successfully")
         } catch {
             print("❌ Failed to create video input: \(error)")
+            setupUIForSimulator()
             return
         }
         
@@ -395,6 +432,7 @@ class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsD
             print("✅ Video input added to session")
         } else {
             print("❌ Cannot add video input to session")
+            setupUIForSimulator()
             return
         }
         
@@ -409,20 +447,60 @@ class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsD
             print("✅ QR code detection enabled")
         } else {
             print("❌ Cannot add metadata output to session")
+            setupUIForSimulator()
             return
         }
         
         print("✅ Camera setup completed successfully")
+        setupUI()
+    }
+    
+    private func setupUIForSimulator() {
+        print("📱 Setting up UI for simulator (no camera)")
+        setupUI()
+        
+        // Show alert that camera is not available
+        DispatchQueue.main.async {
+            let alert = UIAlertController(
+                title: "Camera Not Available", 
+                message: "Camera is not available in simulator. Please use the Photo Library option to scan QR codes.", 
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+                // Automatically open photo library
+                self.photoLibraryTapped()
+            })
+            self.present(alert, animated: true)
+        }
     }
     
     private func setupUI() {
         view.backgroundColor = UIColor.black
         
-        // Preview layer
-        previewLayer = AVCaptureVideoPreviewLayer(session: captureSession!)
-        previewLayer?.frame = view.layer.bounds
-        previewLayer?.videoGravity = .resizeAspectFill
-        view.layer.addSublayer(previewLayer!)
+        // Preview layer (only if camera session exists)
+        if let session = captureSession {
+            previewLayer = AVCaptureVideoPreviewLayer(session: session)
+            previewLayer?.frame = view.layer.bounds
+            previewLayer?.videoGravity = .resizeAspectFill
+            view.layer.addSublayer(previewLayer!)
+        } else {
+            // No camera available, show a placeholder
+            let placeholderLabel = UILabel()
+            placeholderLabel.text = "Camera not available\nUse Photo Library to scan QR codes"
+            placeholderLabel.textColor = .white
+            placeholderLabel.textAlignment = .center
+            placeholderLabel.numberOfLines = 0
+            placeholderLabel.font = UIFont.systemFont(ofSize: 18)
+            placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(placeholderLabel)
+            
+            NSLayoutConstraint.activate([
+                placeholderLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+                placeholderLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+                placeholderLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
+                placeholderLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32)
+            ])
+        }
         
         // Close button
         let closeButton = UIButton(type: .system)
@@ -434,16 +512,35 @@ class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsD
         closeButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(closeButton)
         
+        // Photo Library button (for simulator testing)
+        let photoButton = UIButton(type: .system)
+        photoButton.setTitle("Photo Library", for: .normal)
+        photoButton.setTitleColor(.white, for: .normal)
+        photoButton.backgroundColor = UIColor.blue.withAlphaComponent(0.8)
+        photoButton.layer.cornerRadius = 8
+        photoButton.addTarget(self, action: #selector(photoLibraryTapped), for: .touchUpInside)
+        photoButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(photoButton)
+        
         NSLayoutConstraint.activate([
             closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
             closeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             closeButton.widthAnchor.constraint(equalToConstant: 80),
-            closeButton.heightAnchor.constraint(equalToConstant: 40)
+            closeButton.heightAnchor.constraint(equalToConstant: 40),
+            
+            photoButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
+            photoButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            photoButton.widthAnchor.constraint(equalToConstant: 120),
+            photoButton.heightAnchor.constraint(equalToConstant: 40)
         ])
         
         // Instructions label
         let instructionsLabel = UILabel()
-        instructionsLabel.text = "Position the QR code within the frame"
+        if captureSession != nil {
+            instructionsLabel.text = "Position the QR code within the frame or tap Photo Library"
+        } else {
+            instructionsLabel.text = "Tap Photo Library to select a QR code image"
+        }
         instructionsLabel.textColor = .white
         instructionsLabel.textAlignment = .center
         instructionsLabel.backgroundColor = UIColor.black.withAlphaComponent(0.7)
@@ -476,6 +573,57 @@ class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsD
     
     @objc private func closeTapped() {
         dismiss(animated: true)
+    }
+    
+    @objc private func photoLibraryTapped() {
+        let imagePicker = UIImagePickerController()
+        imagePicker.delegate = self
+        imagePicker.sourceType = .photoLibrary
+        imagePicker.allowsEditing = false
+        present(imagePicker, animated: true)
+    }
+    
+    // MARK: - UIImagePickerControllerDelegate
+    
+    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+        picker.dismiss(animated: true)
+        
+        if let image = info[.originalImage] as? UIImage {
+            // Scan QR code from the selected image
+            scanQRCodeFromImage(image)
+        }
+    }
+    
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        picker.dismiss(animated: true)
+    }
+    
+    private func scanQRCodeFromImage(_ image: UIImage) {
+        guard let ciImage = CIImage(image: image) else {
+            print("❌ Could not create CIImage from selected image")
+            return
+        }
+        
+        let context = CIContext()
+        let detector = CIDetector(ofType: CIDetectorTypeQRCode, context: context, options: [CIDetectorAccuracy: CIDetectorAccuracyHigh])
+        
+        let features = detector?.features(in: ciImage) ?? []
+        
+        for feature in features {
+            if let qrFeature = feature as? CIQRCodeFeature {
+                if let qrCodeString = qrFeature.messageString {
+                    print("✅ QR code found in image: \(qrCodeString)")
+                    delegate?.didScanCode(qrCodeString)
+                    return
+                }
+            }
+        }
+        
+        print("❌ No QR code found in selected image")
+        // Show alert to user
+        let alert = UIAlertController(title: "No QR Code Found", message: "The selected image doesn't contain a valid QR code.", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
     }
     
     // MARK: - AVCaptureMetadataOutputObjectsDelegate

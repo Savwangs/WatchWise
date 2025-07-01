@@ -23,69 +23,71 @@ class PairingManager: ObservableObject {
     
     private let firebaseManager = FirebaseManager.shared
     private let codeExpirationTime: TimeInterval = 600 // 10 minutes
+    private var activePairingRequestId: String?
+    private var cleanupTimer: Timer?
     
     // MARK: - Day 3: Enhanced Child Device Code Generation
     
-    /// Generates a 6-digit pairing code for child device with QR code
-    func generatePairingCode(childName: String, deviceName: String) async -> Result<PairingCodeData, PairingError> {
-        guard let currentUser = Auth.auth().currentUser else {
-            return .failure(.notAuthenticated)
-        }
-        
-        // Add authentication check
-        if currentUser.uid.isEmpty {
-            return .failure(.notAuthenticated)
-        }
+    /// Generates a new pairing code for child device
+    func generatePairingCode(childUserId: String, childName: String, deviceName: String) async -> Result<String, PairingError> {
+        print("🔄 Starting pairing code generation...")
+        print("🔄 Child User ID: \(childUserId)")
+        print("🔄 Child Name: \(childName)")
+        print("🔄 Device Name: \(deviceName)")
         
         isLoading = true
         errorMessage = nil
         
         do {
-            // Generate unique 6-digit code
-            let pairCode = generateUniqueCode()
-            let expirationDate = Date().addingTimeInterval(codeExpirationTime)
+            // Generate a random 6-digit code
+            let code = String(format: "%06d", Int.random(in: 100000...999999))
+            print("✅ Generated code: \(code)")
+            
+            // Set expiration time (10 minutes from now)
+            let expiresAt = Timestamp(date: Date().addingTimeInterval(10 * 60))
+            print("⏰ Code expires at: \(expiresAt.dateValue())")
             
             // Create pairing request document
-            let pairingData: [String: Any] = [
-                "pairCode": pairCode,
-                "childUserId": currentUser.uid,
+            let pairingRequest = [
+                "childUserId": childUserId,
                 "childName": childName,
                 "deviceName": deviceName,
-                "createdAt": Timestamp(),
-                "expiresAt": Timestamp(date: expirationDate),
+                "pairCode": code,
                 "isActive": false,
                 "isExpired": false,
-                "deviceInfo": getDeviceInfo()
-            ]
+                "expiresAt": expiresAt,
+                "createdAt": Timestamp()
+            ] as [String : Any]
             
-            // Store in Firestore using FirebaseManager
-            let docRef = try await firebaseManager.pairingRequestsCollection.addDocument(data: pairingData)
+            print("📄 Creating pairing request document...")
+            print("📄 Document data: \(pairingRequest)")
             
-            print("✅ Pairing code generated successfully: \(pairCode)")
+            let documentRef = try await firebaseManager.pairingRequestsCollection.addDocument(data: pairingRequest)
+            print("✅ Pairing request created with ID: \(documentRef.documentID)")
             
-            // Generate QR code
-            let qrCodeImage = generateQRCode(from: pairCode)
+            // Store the document ID for cleanup
+            activePairingRequestId = documentRef.documentID
+            print("💾 Stored active pairing request ID: \(activePairingRequestId ?? "nil")")
             
-            // Schedule cleanup for expired code
-            scheduleCodeCleanup(documentId: docRef.documentID, expirationDate: expirationDate)
+            // Start cleanup timer
+            startCleanupTimer()
+            print("⏰ Started cleanup timer")
             
             isLoading = false
+            successMessage = "Pairing code generated successfully!"
             
-            let pairingCodeData = PairingCodeData(
-                code: pairCode,
-                qrCodeImage: qrCodeImage,
-                expiresAt: expirationDate,
-                documentId: docRef.documentID
-            )
+            return .success(code)
             
-            return .success(pairingCodeData)
+        } catch {
+            print("🔥 Error during code generation: \(error)")
+            print("🔥 Error type: \(type(of: error))")
+            if let nsError = error as NSError? {
+                print("🔥 Error code: \(nsError.code)")
+                print("🔥 Error domain: \(nsError.domain)")
+                print("🔥 Error description: \(nsError.localizedDescription)")
+            }
             
-        } catch let error as NSError {
             isLoading = false
-            print("🔥 Firebase Error: \(error.localizedDescription)")
-            print("🔥 Error Code: \(error.code)")
-            print("🔥 Error Domain: \(error.domain)")
-            
             let pairingError = PairingError.databaseError(error.localizedDescription)
             errorMessage = pairingError.localizedDescription
             return .failure(pairingError)
@@ -95,7 +97,7 @@ class PairingManager: ObservableObject {
     // MARK: - Day 3: QR Code Generation
     
     /// Generates QR code from pairing code
-    private func generateQRCode(from code: String) -> UIImage? {
+    func generateQRCode(from code: String) -> UIImage? {
         let context = CIContext()
         let filter = CIFilter.qrCodeGenerator()
         
@@ -122,10 +124,17 @@ class PairingManager: ObservableObject {
             return .failure(.invalidCode)
         }
         
+        print("🔄 Starting device pairing with code: \(code)")
+        print("🔄 Parent User ID: \(parentUserId)")
+        
         isLoading = true
         errorMessage = nil
         
         do {
+            print("🔍 Querying for pairing request...")
+            print("🔍 Current authenticated user: \(Auth.auth().currentUser?.uid ?? "nil")")
+            print("🔍 Query conditions: pairCode=\(code), isActive=false, isExpired=false")
+            
             // Query for active pairing request with matching code
             let snapshot = try await firebaseManager.pairingRequestsCollection
                 .whereField("pairCode", isEqualTo: code)
@@ -133,18 +142,31 @@ class PairingManager: ObservableObject {
                 .whereField("isExpired", isEqualTo: false)
                 .getDocuments()
             
+            print("✅ Query completed, found \(snapshot.documents.count) documents")
+            
             guard let document = snapshot.documents.first else {
+                print("❌ No matching pairing request found")
+                print("❌ This could mean:")
+                print("   - Code doesn't exist")
+                print("   - Code is already active (already paired)")
+                print("   - Code has expired")
+                print("   - Permission issue accessing the document")
                 isLoading = false
                 let error = PairingError.codeNotFound
                 errorMessage = error.localizedDescription
                 return .failure(error)
             }
             
+            print("✅ Found pairing request document: \(document.documentID)")
             let data = document.data()
+            print("📄 Document data: \(data)")
             
             // Check if code has expired
             if let expiresAt = data["expiresAt"] as? Timestamp,
                expiresAt.dateValue() < Date() {
+                print("❌ Pairing code has expired")
+                print("❌ Expires at: \(expiresAt.dateValue())")
+                print("❌ Current time: \(Date())")
                 isLoading = false
                 let error = PairingError.codeExpired
                 errorMessage = error.localizedDescription
@@ -154,20 +176,28 @@ class PairingManager: ObservableObject {
             guard let childUserId = data["childUserId"] as? String,
                   let childName = data["childName"] as? String,
                   let deviceName = data["deviceName"] as? String else {
+                print("❌ Invalid document data structure")
+                print("❌ Available fields: \(data.keys)")
                 isLoading = false
                 let error = PairingError.invalidData
                 errorMessage = error.localizedDescription
                 return .failure(error)
             }
             
+            print("✅ Extracted data - Child: \(childName), Device: \(deviceName), ChildUserID: \(childUserId)")
+            
             // Check if relationship already exists
+            print("🔍 Checking for existing relationship...")
             let relationshipExists = await validateParentChildRelationship(parentUserId: parentUserId, childUserId: childUserId)
             if relationshipExists {
+                print("❌ Relationship already exists")
                 isLoading = false
                 let error = PairingError.alreadyPaired
                 errorMessage = error.localizedDescription
                 return .failure(error)
             }
+            
+            print("✅ No existing relationship found, creating new one...")
             
             // Create parent-child relationship
             let relationshipId = try await createParentChildRelationship(
@@ -178,19 +208,27 @@ class PairingManager: ObservableObject {
                 pairingCode: code
             )
             
+            print("✅ Parent-child relationship created: \(relationshipId)")
+            
             // Mark pairing request as active
+            print("🔍 Updating pairing request status...")
             try await document.reference.updateData([
                 "isActive": true,
                 "parentUserId": parentUserId,
                 "pairedAt": Timestamp()
             ])
             
+            print("✅ Pairing request marked as active")
+            
             // Update child's device pairing status
+            print("🔍 Updating child's device pairing status...")
             try await firebaseManager.usersCollection.document(childUserId).updateData([
                 "isDevicePaired": true,
                 "pairedWithParent": parentUserId,
                 "pairedAt": Timestamp()
             ])
+            
+            print("✅ Child's device pairing status updated")
             
             isLoading = false
             successMessage = "Successfully paired with \(childName)'s device!"
@@ -203,6 +241,30 @@ class PairingManager: ObservableObject {
             ))
             
         } catch {
+            print("🔥 Error during pairing process: \(error)")
+            print("🔥 Error type: \(type(of: error))")
+            if let nsError = error as NSError? {
+                print("🔥 Error code: \(nsError.code)")
+                print("🔥 Error domain: \(nsError.domain)")
+                print("🔥 Error description: \(nsError.localizedDescription)")
+                print("🔥 Error user info: \(nsError.userInfo)")
+            }
+            
+            // Check if it's a permission error
+            if let nsError = error as NSError?, nsError.domain == "FIRFirestoreErrorDomain" {
+                switch nsError.code {
+                case 7: // Permission denied
+                    print("🔥 PERMISSION DENIED: User doesn't have permission to access this document")
+                    print("🔥 This usually means the Firebase security rules are blocking access")
+                    break
+                case 5: // Not found
+                    print("🔥 NOT FOUND: The document or collection doesn't exist")
+                    break
+                default:
+                    print("🔥 Other Firestore error: \(nsError.code)")
+                }
+            }
+            
             isLoading = false
             let pairingError = PairingError.databaseError(error.localizedDescription)
             errorMessage = pairingError.localizedDescription
@@ -378,6 +440,194 @@ class PairingManager: ObservableObject {
     
     // MARK: - Day 3: Enhanced Cleanup Methods
     
+    /// Test Firebase permissions and connection
+    func testFirebasePermissions() async {
+        print("🧪 Testing Firebase permissions...")
+        
+        guard let currentUser = Auth.auth().currentUser else {
+            print("❌ No authenticated user")
+            return
+        }
+        
+        print("✅ Authenticated user: \(currentUser.uid)")
+        
+        do {
+            // Test 1: Try to read from pairingRequests collection
+            print("🧪 Test 1: Reading from pairingRequests collection...")
+            let snapshot = try await firebaseManager.pairingRequestsCollection.limit(to: 1).getDocuments()
+            print("✅ Successfully read from pairingRequests collection")
+            
+            // Test 2: Try to create a test document
+            print("🧪 Test 2: Creating test document...")
+            let testDoc = try await firebaseManager.pairingRequestsCollection.addDocument(data: [
+                "test": true,
+                "timestamp": Timestamp(),
+                "userId": currentUser.uid
+            ])
+            print("✅ Successfully created test document: \(testDoc.documentID)")
+            
+            // Test 3: Try to read the test document
+            print("🧪 Test 3: Reading test document...")
+            let testSnapshot = try await testDoc.getDocument()
+            print("✅ Successfully read test document")
+            
+            // Test 4: Try to update the test document
+            print("🧪 Test 4: Updating test document...")
+            try await testDoc.updateData([
+                "updated": true,
+                "updateTime": Timestamp()
+            ])
+            print("✅ Successfully updated test document")
+            
+            // Test 5: Try to delete the test document
+            print("🧪 Test 5: Deleting test document...")
+            try await testDoc.delete()
+            print("✅ Successfully deleted test document")
+            
+            print("🎉 All Firebase permission tests passed!")
+            
+        } catch {
+            print("❌ Firebase permission test failed: \(error)")
+            if let nsError = error as NSError? {
+                print("❌ Error code: \(nsError.code)")
+                print("❌ Error domain: \(nsError.domain)")
+                print("❌ Error description: \(nsError.localizedDescription)")
+            }
+        }
+    }
+    
+    /// Test specific pairing scenario
+    func testPairingScenario() async {
+        print("🧪 Testing specific pairing scenario...")
+        
+        guard let currentUser = Auth.auth().currentUser else {
+            print("❌ No authenticated user")
+            return
+        }
+        
+        print("✅ Authenticated user: \(currentUser.uid)")
+        
+        do {
+            // Create a test pairing request (simulating child device)
+            print("🧪 Creating test pairing request...")
+            let testPairingRequest = [
+                "childUserId": "test-child-user-id",
+                "childName": "Test Child",
+                "deviceName": "Test Device",
+                "pairCode": "123456",
+                "isActive": false,
+                "isExpired": false,
+                "expiresAt": Timestamp(date: Date().addingTimeInterval(600)), // 10 minutes from now
+                "createdAt": Timestamp()
+            ] as [String : Any]
+            
+            let testDoc = try await firebaseManager.pairingRequestsCollection.addDocument(data: testPairingRequest)
+            print("✅ Created test pairing request: \(testDoc.documentID)")
+            
+            // Try to read the test pairing request (simulating parent device)
+            print("🧪 Reading test pairing request...")
+            let snapshot = try await firebaseManager.pairingRequestsCollection
+                .whereField("pairCode", isEqualTo: "123456")
+                .whereField("isActive", isEqualTo: false)
+                .whereField("isExpired", isEqualTo: false)
+                .getDocuments()
+            
+            print("✅ Found \(snapshot.documents.count) matching documents")
+            
+            if let document = snapshot.documents.first {
+                print("✅ Successfully read pairing request")
+                
+                // Try to update the pairing request (this is where the error occurs)
+                print("🧪 Updating pairing request...")
+                try await document.reference.updateData([
+                    "isActive": true,
+                    "parentUserId": currentUser.uid,
+                    "pairedAt": Timestamp()
+                ])
+                print("✅ Successfully updated pairing request")
+                
+                // Clean up
+                try await document.reference.delete()
+                print("✅ Cleaned up test document")
+            }
+            
+            print("🎉 Pairing scenario test passed!")
+            
+        } catch {
+            print("❌ Pairing scenario test failed: \(error)")
+            if let nsError = error as NSError? {
+                print("❌ Error code: \(nsError.code)")
+                print("❌ Error domain: \(nsError.domain)")
+                print("❌ Error description: \(nsError.localizedDescription)")
+            }
+        }
+    }
+    
+    /// Test the exact same update operation that's failing
+    func testExactPairingUpdate() async {
+        print("🧪 Testing exact pairing update operation...")
+        
+        guard let currentUser = Auth.auth().currentUser else {
+            print("❌ No authenticated user")
+            return
+        }
+        
+        print("✅ Authenticated user: \(currentUser.uid)")
+        
+        do {
+            // Try to update the specific document that's failing
+            print("🧪 Attempting to update the existing pairing request...")
+            
+            // First, let's find the document that was created
+            let snapshot = try await firebaseManager.pairingRequestsCollection
+                .whereField("pairCode", isEqualTo: "948127") // Use the actual code from your test
+                .getDocuments()
+            
+            if let document = snapshot.documents.first {
+                print("✅ Found document: \(document.documentID)")
+                print("📄 Current data: \(document.data())")
+                
+                // Try the exact same update operation
+                try await document.reference.updateData([
+                    "isActive": true,
+                    "parentUserId": currentUser.uid,
+                    "pairedAt": Timestamp()
+                ])
+                print("✅ SUCCESS: Update operation worked!")
+                
+            } else {
+                print("❌ Document not found")
+            }
+            
+        } catch {
+            print("❌ Update test failed: \(error)")
+            if let nsError = error as NSError? {
+                print("❌ Error code: \(nsError.code)")
+                print("❌ Error domain: \(nsError.domain)")
+                print("❌ Error description: \(nsError.localizedDescription)")
+            }
+        }
+    }
+    
+    /// Starts cleanup timer for active pairing request
+    private func startCleanupTimer() {
+        // Cancel existing timer if any
+        cleanupTimer?.invalidate()
+        
+        // Start new timer for code expiration
+        cleanupTimer = Timer.scheduledTimer(withTimeInterval: codeExpirationTime, repeats: false) { [weak self] _ in
+            Task {
+                await self?.cleanupExpiredCodes()
+            }
+        }
+    }
+    
+    /// Stops cleanup timer
+    private func stopCleanupTimer() {
+        cleanupTimer?.invalidate()
+        cleanupTimer = nil
+    }
+    
     /// Cleans up expired pairing requests (call periodically)
     func cleanupExpiredCodes() async {
         do {
@@ -409,6 +659,77 @@ class PairingManager: ObservableObject {
             }
         case .failure(let error):
             print("Error loading paired children: \(error)")
+        }
+    }
+    
+    // MARK: - Cleanup
+    
+    deinit {
+        cleanupTimer?.invalidate()
+        cleanupTimer = nil
+    }
+    
+    /// Test very basic Firebase operations
+    func testBasicFirebaseOperations() async {
+        print("🧪 Testing very basic Firebase operations...")
+        
+        guard let currentUser = Auth.auth().currentUser else {
+            print("❌ No authenticated user")
+            return
+        }
+        
+        print("✅ Authenticated user: \(currentUser.uid)")
+        
+        do {
+            // Test 1: Try to read from a simple collection
+            print("🧪 Test 1: Reading from users collection...")
+            let userSnapshot = try await firebaseManager.usersCollection.document(currentUser.uid).getDocument()
+            print("✅ Successfully read user document")
+            
+            // Test 2: Try to write to users collection
+            print("🧪 Test 2: Writing to users collection...")
+            try await firebaseManager.usersCollection.document(currentUser.uid).setData([
+                "lastTested": Timestamp(),
+                "testUser": true
+            ], merge: true)
+            print("✅ Successfully wrote to user document")
+            
+            // Test 3: Try to read from pairingRequests collection
+            print("🧪 Test 3: Reading from pairingRequests collection...")
+            let pairingSnapshot = try await firebaseManager.pairingRequestsCollection.limit(to: 1).getDocuments()
+            print("✅ Successfully read from pairingRequests collection")
+            
+            // Test 4: Try to create a document in pairingRequests
+            print("🧪 Test 4: Creating document in pairingRequests...")
+            let testDoc = try await firebaseManager.pairingRequestsCollection.addDocument(data: [
+                "test": true,
+                "userId": currentUser.uid,
+                "timestamp": Timestamp()
+            ])
+            print("✅ Successfully created document: \(testDoc.documentID)")
+            
+            // Test 5: Try to update the document
+            print("🧪 Test 5: Updating document...")
+            try await testDoc.updateData([
+                "updated": true,
+                "updateTime": Timestamp()
+            ])
+            print("✅ Successfully updated document")
+            
+            // Test 6: Try to delete the document
+            print("🧪 Test 6: Deleting document...")
+            try await testDoc.delete()
+            print("✅ Successfully deleted document")
+            
+            print("🎉 All basic Firebase operations passed!")
+            
+        } catch {
+            print("❌ Basic Firebase test failed: \(error)")
+            if let nsError = error as NSError? {
+                print("❌ Error code: \(nsError.code)")
+                print("❌ Error domain: \(nsError.domain)")
+                print("❌ Error description: \(nsError.localizedDescription)")
+            }
         }
     }
 }

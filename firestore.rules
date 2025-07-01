@@ -30,15 +30,17 @@ service cloud.firestore {
          resource.data.childUserId == request.auth.uid);
     }
     
-    // Pairing requests - anyone can create, but only the creator can read/update
+    // Pairing requests - anyone can create, and any authenticated user can read during pairing
     match /pairingRequests/{requestId} {
       allow create: if isAuthenticated();
-      allow read, update: if isAuthenticated() && 
+      allow read: if isAuthenticated(); // Allow any authenticated user to read during pairing
+      allow update: if isAuthenticated() && 
         (resource.data.childUserId == request.auth.uid || 
-         resource.data.parentUserId == request.auth.uid);
+         (resource.data.parentUserId != null && resource.data.parentUserId == request.auth.uid) ||
+         (resource.data.parentUserId == null && resource.data.isActive == false)); // Allow any authenticated user to update inactive requests during pairing
       allow delete: if isAuthenticated() && 
         (resource.data.childUserId == request.auth.uid || 
-         resource.data.parentUserId == request.auth.uid);
+         (resource.data.parentUserId != null && resource.data.parentUserId == request.auth.uid));
     }
     
     // Parent-child relationships - only involved parties can access

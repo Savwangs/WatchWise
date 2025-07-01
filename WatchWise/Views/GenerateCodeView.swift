@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import FirebaseAuth
 
 struct GenerateCodeView: View {
     @StateObject private var pairingManager = PairingManager()
@@ -26,8 +27,18 @@ struct GenerateCodeView: View {
     
     var body: some View {
         VStack(spacing: 40) {
-            // Header
+            // Header with Sign Out Button
             VStack(spacing: 16) {
+                HStack {
+                    Spacer()
+                    Button(action: signOut) {
+                        Text("Sign Out")
+                            .font(.subheadline)
+                            .foregroundColor(.red)
+                    }
+                }
+                .padding(.horizontal)
+                
                 Image(systemName: "link.circle.fill")
                     .font(.system(size: 60))
                     .foregroundStyle(
@@ -250,15 +261,29 @@ struct GenerateCodeView: View {
     }
     
     private func generateCode() {
+        guard let currentUser = Auth.auth().currentUser else {
+            alertMessage = "You must be signed in to generate a pairing code."
+            showAlert = true
+            return
+        }
+        
         Task {
             let result = await pairingManager.generatePairingCode(
+                childUserId: currentUser.uid,
                 childName: childName.trimmingCharacters(in: .whitespacesAndNewlines),
                 deviceName: deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
             )
             
             await MainActor.run {
                 switch result {
-                case .success(let codeData):
+                case .success(let code):
+                    // Create PairingCodeData for display
+                    let codeData = PairingCodeData(
+                        code: code,
+                        qrCodeImage: pairingManager.generateQRCode(from: code),
+                        expiresAt: Date().addingTimeInterval(600), // 10 minutes
+                        documentId: ""
+                    )
                     pairingCodeData = codeData
                     isCodeGenerated = true
                     startTimer(expirationDate: codeData.expiresAt)
@@ -319,6 +344,18 @@ struct GenerateCodeView: View {
         NotificationCenter.default.post(name: .showChildHome, object: nil)
     }
     // DEMO DATA - END
+    
+    // MARK: - Sign Out
+    
+    private func signOut() {
+        do {
+            try Auth.auth().signOut()
+            authManager.signOut()
+        } catch {
+            alertMessage = "Error signing out: \(error.localizedDescription)"
+            showAlert = true
+        }
+    }
 }
 
 #Preview {
