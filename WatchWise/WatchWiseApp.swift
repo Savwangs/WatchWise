@@ -144,15 +144,30 @@ struct WatchWiseApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var authManager = AuthenticationManager()
     @StateObject private var databaseManager = DatabaseManager.shared
+    @StateObject private var activityMonitoringManager = ActivityMonitoringManager.shared
+    @StateObject private var notificationManager = NotificationManager.shared
     
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(authManager)
                 .environmentObject(databaseManager)
+                .environmentObject(activityMonitoringManager)
+                .environmentObject(notificationManager)
                 .onAppear {
                     setupAppearance()
+                    setupActivityMonitoring()
                 }
+        }
+    }
+    
+    private func setupActivityMonitoring() {
+        // Start activity monitoring for child devices
+        if let currentUser = Auth.auth().currentUser {
+            // Check if this is a child device (you can add logic to determine user type)
+            // For now, we'll start monitoring for all users
+            activityMonitoringManager.startMonitoring()
+            notificationManager.startListeningForNotifications()
         }
     }
     

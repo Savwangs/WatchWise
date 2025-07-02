@@ -20,19 +20,26 @@ struct MainTabView: View {
                 }
                 .tag(0)
             
-            MessagesView()
+            DeviceManagementView()
                 .tabItem {
-                    Image(systemName: selectedTab == 1 ? "message.fill" : "message")
-                    Text("Messages")
+                    Image(systemName: selectedTab == 1 ? "iphone.radiowaves.left.and.right.fill" : "iphone.radiowaves.left.and.right")
+                    Text("Devices")
                 }
                 .tag(1)
             
-            SettingsView()
+            MessagesView()
                 .tabItem {
-                    Image(systemName: selectedTab == 2 ? "gear.fill" : "gear")
-                    Text("Settings")
+                    Image(systemName: selectedTab == 2 ? "message.fill" : "message")
+                    Text("Messages")
                 }
                 .tag(2)
+            
+            SettingsView()
+                .tabItem {
+                    Image(systemName: selectedTab == 3 ? "gear.fill" : "gear")
+                    Text("Settings")
+                }
+                .tag(3)
         }
         .accentColor(.blue)
         .onAppear {

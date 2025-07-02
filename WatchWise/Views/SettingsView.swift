@@ -13,12 +13,11 @@ import FirebaseFirestore
 struct SettingsView: View {
     @EnvironmentObject var authManager: AuthenticationManager
     @StateObject private var databaseManager = DatabaseManager.shared
-    @State private var pairedDevices: [ChildDevice] = []
+    @StateObject private var pairingManager = PairingManager.shared
     @State private var alertSettings = AlertSettings.defaultSettings
-    @State private var isLoading = false
     @State private var showSignOutAlert = false
     @State private var showUnlinkAlert = false
-    @State private var deviceToUnlink: ChildDevice?
+    @State private var deviceToUnlink: PairedChildDevice?
     @State private var showError = false
     @State private var errorMessage = ""
     
@@ -64,37 +63,19 @@ struct SettingsView: View {
                         }
                         .padding(.bottom, 24)
                         
-                        // Paired Devices Section
+                        // Current Paired Device Section
                         VStack(alignment: .leading, spacing: 16) {
                             HStack {
-                                Text("Paired Devices")
+                                Text("Current Paired Device")
                                     .font(.headline)
                                     .foregroundColor(.secondary)
                                 
                                 Spacer()
-                                
-                                // Add Device Button (always visible)
-                                NavigationLink(destination: DevicePairingView()
-                                    .onDisappear {
-                                        Task {
-                                            await loadPairedDevices()
-                                        }
-                                    }
-                                ) {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "plus.circle.fill")
-                                            .foregroundColor(.blue)
-                                        Text("Add Device")
-                                            .font(.subheadline)
-                                            .fontWeight(.medium)
-                                    }
-                                    .foregroundColor(.blue)
-                                }
                             }
                             .padding(.horizontal)
                             
                             VStack(spacing: 12) {
-                                if isLoading {
+                                if pairingManager.isLoading {
                                     HStack {
                                         ProgressView()
                                             .scaleEffect(0.8)
@@ -105,11 +86,11 @@ struct SettingsView: View {
                                     .padding()
                                     .background(Color(.systemGray6))
                                     .cornerRadius(12)
-                                } else if pairedDevices.isEmpty {
+                                } else if pairingManager.pairedChildren.isEmpty {
                                     HStack {
                                         Image(systemName: "iphone.slash")
                                             .foregroundColor(.gray)
-                                        Text("No devices paired")
+                                        Text("No device currently paired")
                                             .foregroundColor(.secondary)
                                         Spacer()
                                     }
@@ -117,14 +98,17 @@ struct SettingsView: View {
                                     .background(Color(.systemGray6))
                                     .cornerRadius(12)
                                 } else {
-                                    ForEach(pairedDevices) { device in
-                                        DeviceRow(device: device) {
-                                            deviceToUnlink = device
-                                            showUnlinkAlert = true
-                                        }
-                                        .padding()
-                                        .background(Color(.systemGray6))
-                                        .cornerRadius(12)
+                                    // Show the currently selected device from Dashboard
+                                    let selectedDeviceId = UserDefaults.standard.string(forKey: "selectedDeviceId")
+                                    let currentDevice = selectedDeviceId != nil ? 
+                                        pairingManager.pairedChildren.first { $0.childUserId == selectedDeviceId } :
+                                        pairingManager.pairedChildren.first
+                                    
+                                    if let device = currentDevice {
+                                        CurrentDeviceRow(device: device)
+                                            .padding()
+                                            .background(Color(.systemGray6))
+                                            .cornerRadius(12)
                                     }
                                 }
                             }
@@ -452,10 +436,22 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
             .refreshable {
-                await loadPairedDevices()
+                await pairingManager.loadPairedChildren()
             }
-            .task {
-                await loadInitialData()
+            .onAppear {
+                Task {
+                    await pairingManager.loadPairedChildren()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                Task {
+                    await pairingManager.loadPairedChildren()
+                }
+            }
+            .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
+                Task {
+                    await pairingManager.loadPairedChildren()
+                }
             }
         }
         .alert("Sign Out", isPresented: $showSignOutAlert) {
@@ -492,64 +488,11 @@ struct SettingsView: View {
     
     // MARK: - Data Loading Methods
     
-    @MainActor
-    private func loadInitialData() async {
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask {
-                await loadPairedDevices()
-            }
-            group.addTask {
-                await loadAlertSettingsWithDefaults()
-            }
-        }
-    }
+    // This function is no longer needed since we're using PairingManager
+    // The paired devices are now loaded through pairingManager.loadPairedChildren()
     
-    @MainActor
-    private func loadPairedDevices() async {
-        guard let parentId = authManager.currentUser?.id else {
-            showErrorMessage("User not authenticated")
-            return
-        }
-        
-        isLoading = true
-        
-        // DEMO DATA - START (Remove in production)
-        // Simulate loading delay
-        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-        
-        let demoDevice = ChildDevice(
-            id: "demo_device_1",
-            childName: "Savir",
-            deviceName: "Savir's iPhone",
-            pairCode: "123456",
-            parentId: parentId,
-            pairedAt: Timestamp(date: Date().addingTimeInterval(-86400)),
-            isActive: true
-        )
-        
-        pairedDevices = [demoDevice]
-        isLoading = false
-        print("✅ Loaded demo paired device: \(demoDevice.childName)")
-        // DEMO DATA - END (Remove in production)
-        
-        /* PRODUCTION CODE - Uncomment when ready for production
-        await withCheckedContinuation { continuation in
-            databaseManager.getChildDevices(for: parentId) { result in
-                DispatchQueue.main.async {
-                    self.isLoading = false
-                    switch result {
-                    case .success(let devices):
-                        self.pairedDevices = devices
-                        print("✅ Loaded \(devices.count) paired devices")
-                    case .failure(let error):
-                        self.showErrorMessage("Failed to load paired devices: \(error.localizedDescription)")
-                    }
-                    continuation.resume()
-                }
-            }
-        }
-        */
-    }
+    // This function is no longer needed since we're using PairingManager
+    // The paired devices are now loaded through pairingManager.loadPairedChildren()
     
     @MainActor
     private func loadAlertSettings() async {
@@ -575,32 +518,20 @@ struct SettingsView: View {
     
     // MARK: - Device Management
     
-    private func unlinkDevice(_ device: ChildDevice) {
-        guard let deviceId = device.id else {
-            showErrorMessage("Invalid device")
-            return
-        }
-        
-        // Update the device status to inactive
-        let updateData: [String: Any] = [
-            "isActive": false,
-            "unlinkedAt": Timestamp()
-        ]
-        
-        FirebaseManager.shared.devicesCollection
-            .document(deviceId)
-            .updateData(updateData) { error in
-                DispatchQueue.main.async {
-                    if let error = error {
-                        self.showErrorMessage("Failed to unlink device: \(error.localizedDescription)")
-                    } else {
-                        // Remove from local array
-                        self.pairedDevices.removeAll { $0.id == deviceId }
-                        self.deviceToUnlink = nil
-                        print("✅ Device unlinked successfully")
-                    }
+    private func unlinkDevice(_ device: PairedChildDevice) {
+        Task {
+            let result = await pairingManager.unpairChild(relationshipId: device.id)
+            
+            await MainActor.run {
+                switch result {
+                case .success:
+                    self.deviceToUnlink = nil
+                    print("✅ Device unlinked successfully")
+                case .failure(let error):
+                    self.showErrorMessage("Failed to unlink device: \(error.localizedDescription)")
                 }
             }
+        }
     }
     
     // MARK: - Settings Management
@@ -930,6 +861,46 @@ struct AppLimitSlider: View {
         } else {
             return "\(m)m"
         }
+    }
+}
+
+struct CurrentDeviceRow: View {
+    let device: PairedChildDevice
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(device.childName)
+                    .font(.headline)
+                
+                Text(device.deviceName)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                HStack {
+                    Circle()
+                        .fill(device.isOnline ? Color.green : Color.gray)
+                        .frame(width: 8, height: 8)
+                    
+                    Text(device.isOnline ? "Online" : "Offline")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    Text("• Last sync: \(formatLastSyncTime(device.lastSyncAt))")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Spacer()
+        }
+    }
+    
+    private func formatLastSyncTime(_ timestamp: Timestamp) -> String {
+        let date = timestamp.dateValue()
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 

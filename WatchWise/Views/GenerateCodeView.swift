@@ -20,6 +20,7 @@ struct GenerateCodeView: View {
     @State private var showAlert = false
     @State private var alertMessage = ""
     @State private var isPairingCompleted = false
+    @State private var pairingCheckTimer: Timer?
     @EnvironmentObject var authManager: AuthenticationManager
     
     let onCodeGenerated: (String) -> Void
@@ -190,26 +191,22 @@ struct GenerateCodeView: View {
                         .padding(.top)
                         .disabled(pairingManager.isLoading)
                         
-                        // DEMO DATA - START (Manual navigation button for child)
+                        // Auto-redirect will happen when parent enters the code
                         VStack(spacing: 12) {
-                            Text("Once your parent has entered this code in their app, click the button below to go to your home page.")
+                            Text("You will be automatically redirected to your home page once your parent enters this code.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal)
                             
+                            // Manual navigation button (fallback)
                             Button(action: navigateToChildHome) {
-                                Text("Go to My Home Page")
-                                    .font(.headline)
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                                    .background(Color.green)
-                                    .cornerRadius(12)
+                                Text("Go to My Home Page (Manual)")
+                                    .font(.subheadline)
+                                    .foregroundColor(.blue)
                             }
                         }
                         .padding(.top, 20)
-                        // DEMO DATA - END
                         
                     } else {
                         // Generate Code Button
@@ -237,6 +234,7 @@ struct GenerateCodeView: View {
         }
         .onDisappear {
             stopTimer()
+            stopPairingCheckTimer()
         }
         .alert("Error", isPresented: $showAlert) {
             Button("OK") { }
@@ -287,6 +285,7 @@ struct GenerateCodeView: View {
                     pairingCodeData = codeData
                     isCodeGenerated = true
                     startTimer(expirationDate: codeData.expiresAt)
+                    startPairingCheckTimer(code: codeData.code)
                     onCodeGenerated(codeData.code)
                     
                 case .failure(let error):
@@ -324,6 +323,24 @@ struct GenerateCodeView: View {
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
+    }
+    
+    private func startPairingCheckTimer(code: String) {
+        stopPairingCheckTimer()
+        
+        // Check every 2 seconds if pairing is completed
+        pairingCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+            let isPaired = UserDefaults.standard.bool(forKey: "demoChildPaired_\(code)")
+            if isPaired {
+                self.stopPairingCheckTimer()
+                self.navigateToChildHome()
+            }
+        }
+    }
+    
+    private func stopPairingCheckTimer() {
+        pairingCheckTimer?.invalidate()
+        pairingCheckTimer = nil
     }
     
     private func formatTime(_ seconds: Int) -> String {

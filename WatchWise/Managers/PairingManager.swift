@@ -324,7 +324,7 @@ class PairingManager: ObservableObject {
                     parentId: parentUserId,
                     pairedAt: data["createdAt"] as? Timestamp ?? Timestamp(),
                     isActive: data["isActive"] as? Bool ?? true,
-                    lastSyncAt: data["lastSyncAt"] as? Timestamp ?? Timestamp()
+                    lastSyncAt: data["lastSyncAt"] as? Timestamp ?? Timestamp(date: Date().addingTimeInterval(-300)) // 5 minutes ago as default
                 )
             }
             
@@ -662,6 +662,26 @@ class PairingManager: ObservableObject {
         }
     }
     
+    /// Updates the last sync time for a child device (called from child device)
+    func updateLastSyncTime(childUserId: String) async {
+        do {
+            let snapshot = try await firebaseManager.parentChildRelationshipsCollection
+                .whereField("childUserId", isEqualTo: childUserId)
+                .whereField("isActive", isEqualTo: true)
+                .getDocuments()
+            
+            for doc in snapshot.documents {
+                try await doc.reference.updateData([
+                    "lastSyncAt": Timestamp()
+                ])
+            }
+            
+            print("✅ Updated last sync time for child: \(childUserId)")
+        } catch {
+            print("❌ Failed to update last sync time: \(error)")
+        }
+    }
+    
     // MARK: - Cleanup
     
     deinit {
@@ -762,9 +782,9 @@ struct PairedChildDevice: Identifiable {
     let lastSyncAt: Timestamp
     
     var isOnline: Bool {
-        // Simple online check based on last sync time (within 5 minutes)
-        let fiveMinutesAgo = Date().addingTimeInterval(-300)
-        return lastSyncAt.dateValue() > fiveMinutesAgo
+        // Simple online check based on last sync time (within 30 minutes for demo)
+        let thirtyMinutesAgo = Date().addingTimeInterval(-1800)
+        return lastSyncAt.dateValue() > thirtyMinutesAgo
     }
 }
 

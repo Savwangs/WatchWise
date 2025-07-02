@@ -5,42 +5,18 @@ service cloud.firestore {
     function isAuthenticated() {
       return request.auth != null;
     }
-    
-    // Helper function to check if user is accessing their own data
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-    
-    // Users collection - users can only access their own data
-    match /users/{userId} {
-      allow read, write: if isOwner(userId);
-    }
-    
-    // Families collection - only family members can access
-    match /families/{familyId} {
-      allow read, write: if isAuthenticated() && 
-        (resource.data.parentId == request.auth.uid || 
-         resource.data.childDeviceIds[request.auth.uid] != null);
-    }
-    
-    // Child devices - parents can access their children's devices
-    match /childDevices/{deviceId} {
-      allow read, write: if isAuthenticated() && 
-        (resource.data.parentId == request.auth.uid || 
-         resource.data.childUserId == request.auth.uid);
-    }
-    
+
     // Pairing requests - anyone can create, and any authenticated user can read during pairing
     match /pairingRequests/{requestId} {
-      allow create: if isAuthenticated();
-      allow read: if isAuthenticated(); // Allow any authenticated user to read during pairing
-      allow update: if isAuthenticated() && 
-        (resource.data.childUserId == request.auth.uid || 
-         (resource.data.parentUserId != null && resource.data.parentUserId == request.auth.uid) ||
-         (resource.data.parentUserId == null && resource.data.isActive == false)); // Allow any authenticated user to update inactive requests during pairing
+      allow create, read, update: if isAuthenticated();
       allow delete: if isAuthenticated() && 
         (resource.data.childUserId == request.auth.uid || 
-         (resource.data.parentUserId != null && resource.data.parentUserId == request.auth.uid));
+        resource.data.parentUserId == request.auth.uid);
+    }
+    
+    // Users collection - allow authenticated users to access (needed for pairing)
+    match /users/{userId} {
+      allow read, write: if isAuthenticated();
     }
     
     // Parent-child relationships - only involved parties can access
@@ -54,23 +30,38 @@ service cloud.firestore {
          resource.data.childUserId == request.auth.uid);
     }
     
-    // Screen time data - parents can access their children's data
+    // Families collection - allow authenticated users to access
+    match /families/{familyId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // Child devices - allow authenticated users to access
+    match /childDevices/{deviceId} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // Screen time data - allow authenticated users to access
     match /screenTimeData/{docId} {
-      allow read, write: if isAuthenticated() && 
-        (resource.data.parentId == request.auth.uid || 
-         resource.data.deviceId.matches(request.auth.uid + '.*'));
+      allow read, write: if isAuthenticated();
     }
     
-    // Messages - only sender and recipient can access
+    // Messages - allow authenticated users to access
     match /messages/{messageId} {
-      allow read, write: if isAuthenticated() && 
-        (resource.data.parentId == request.auth.uid || 
-         resource.data.childDeviceId.matches(request.auth.uid + '.*'));
+      allow read, write: if isAuthenticated();
     }
     
-    // Settings - users can only access their own settings
+    // Settings - allow authenticated users to access
     match /settings/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read, write: if isAuthenticated();
+    }
+    
+    // Notifications - only the parent can read their notifications
+    match /notifications/{notificationId} {
+      allow create: if isAuthenticated();
+      allow read, write: if isAuthenticated() && 
+        resource.data.parentUserId == request.auth.uid;
+      allow delete: if isAuthenticated() && 
+        resource.data.parentUserId == request.auth.uid;
     }
     
     // Test collection (for connection testing)

@@ -366,35 +366,16 @@ struct MessagesView: View {
     
     private func clearMessageHistory() {
         messageHistory.removeAll()
-        notificationManager.clearBadge()
+        // Note: Badge clearing is handled by the system
     }
     
     private func setupNotificationObservers() {
-        NotificationCenter.default.addObserver(
-            forName: .notificationReplyTapped,
-            object: nil,
-            queue: .main
-        ) { notification in
-            if let messageId = notification.userInfo?["messageId"] as? String {
-                // Handle reply action - could navigate to specific message or show reply interface
-                print("Reply tapped for message: \(messageId)")
-            }
-        }
-        
-        NotificationCenter.default.addObserver(
-            forName: .messageReceived,
-            object: nil,
-            queue: .main
-        ) { _ in
-            Task {
-                await loadMessageHistory()
-            }
-        }
+        // Note: Notification observers are handled by the main app delegate
+        // Real-time updates are handled by Firestore listeners
     }
     
     private func removeNotificationObservers() {
-        NotificationCenter.default.removeObserver(self, name: .notificationReplyTapped, object: nil)
-        NotificationCenter.default.removeObserver(self, name: .messageReceived, object: nil)
+        // Note: No observers to remove in this implementation
     }
     
     private func getPresetMessages(for type: MessageType) -> [QuickMessage] {

@@ -29,7 +29,8 @@ class MessagingManager: NSObject, ObservableObject {
     
     // MARK: - Setup
     func setupNotifications() {
-        UNUserNotificationCenter.current().delegate = NotificationManager.shared
+        // Note: NotificationManager.shared is not a UNUserNotificationCenterDelegate
+        // The delegate is set in the main app delegate
         requestNotificationPermissions()
     }
     

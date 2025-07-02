@@ -11,6 +11,7 @@ import FirebaseAuth
 struct ChildHomeView: View {
     @EnvironmentObject var authManager: AuthenticationManager
     @StateObject private var screenTimeDataManager = ScreenTimeDataManager()
+    @StateObject private var activityManager = ActivityMonitoringManager.shared
     @State private var showSignOutAlert = false
     
     var body: some View {
@@ -199,6 +200,19 @@ struct ChildHomeView: View {
             }
         } message: {
             Text("Are you sure you want to sign out? This will disconnect your device from your parent.")
+        }
+        .onAppear {
+            // Update sync time when child device appears
+            Task {
+                await activityManager.updateSyncTime()
+            }
+            // Start activity monitoring
+            activityManager.startMonitoring()
+        }
+        .onReceive(Timer.publish(every: 120, on: .main, in: .common).autoconnect()) { _ in
+            Task {
+                await activityManager.updateSyncTime()
+            }
         }
     }
     

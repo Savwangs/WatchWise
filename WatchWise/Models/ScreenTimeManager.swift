@@ -23,7 +23,7 @@ class ScreenTimeManager: ObservableObject {
         realtimeListener?.remove()
     }
     
-    func loadTodayScreenTime(parentId: String) {
+    func loadTodayScreenTime(parentId: String, childDeviceId: String? = nil) {
         isLoading = true
         errorMessage = nil
         
@@ -100,7 +100,7 @@ class ScreenTimeManager: ObservableObject {
         }
     }
     
-    func refreshData(parentId: String) {
+    func refreshData(parentId: String, childDeviceId: String? = nil) {
         // DEMO DATA - START (Remove in production)
         todayScreenTime = nil
         isLoading = true

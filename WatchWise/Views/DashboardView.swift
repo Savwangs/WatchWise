@@ -7,6 +7,7 @@
 import SwiftUI
 import Charts
 import FirebaseAuth
+import FirebaseFirestore
 
 // DEMO DATA START - Extended app usage data to include Messages
 extension ScreenTimeManager {
@@ -24,8 +25,10 @@ extension ScreenTimeManager {
 struct DashboardView: View {
     @EnvironmentObject var authManager: AuthenticationManager
     @StateObject private var screenTimeManager = ScreenTimeManager()
+    @StateObject private var pairingManager = PairingManager.shared
     @State private var showingError = false
     @State private var lastRefresh = Date()
+    @State private var selectedDeviceId: String?
     
     var body: some View {
         NavigationStack {
@@ -35,6 +38,8 @@ struct DashboardView: View {
                     HeaderView(
                         lastRefresh: lastRefresh,
                         isLoading: screenTimeManager.isLoading,
+                        pairedDevices: pairingManager.pairedChildren,
+                        selectedDeviceId: $selectedDeviceId,
                         onRefresh: refreshData
                     )
                     
@@ -70,6 +75,22 @@ struct DashboardView: View {
             }
         }
         .onAppear {
+            Task {
+                await pairingManager.loadPairedChildren()
+            }
+            // Load previously selected device
+            if selectedDeviceId == nil {
+                selectedDeviceId = UserDefaults.standard.string(forKey: "selectedDeviceId")
+            }
+            loadInitialData()
+        }
+        .onChange(of: selectedDeviceId) { newDeviceId in
+            // Save selected device to UserDefaults for SettingsView
+            if let deviceId = newDeviceId {
+                UserDefaults.standard.set(deviceId, forKey: "selectedDeviceId")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "selectedDeviceId")
+            }
             loadInitialData()
         }
         .alert("Error", isPresented: $showingError) {
@@ -91,6 +112,12 @@ struct DashboardView: View {
             return
         }
         
+        // If no device is selected and we have paired devices, select the first one
+        if selectedDeviceId == nil && !pairingManager.pairedChildren.isEmpty {
+            selectedDeviceId = pairingManager.pairedChildren.first?.childUserId
+        }
+        
+        // Load data for selected device
         screenTimeManager.loadTodayScreenTime(parentId: parentId)
     }
     
@@ -101,6 +128,7 @@ struct DashboardView: View {
         }
         
         lastRefresh = Date()
+        
         screenTimeManager.refreshData(parentId: parentId)
     }
     
@@ -115,44 +143,96 @@ struct DashboardView: View {
 struct HeaderView: View {
     let lastRefresh: Date
     let isLoading: Bool
+    let pairedDevices: [PairedChildDevice]
+    @Binding var selectedDeviceId: String?
     let onRefresh: () -> Void
     
+    @State private var showingDevicePicker = false
+    
+    var selectedDevice: PairedChildDevice? {
+        pairedDevices.first { $0.childUserId == selectedDeviceId }
+    }
+    
     var body: some View {
-        HStack {
-            VStack(alignment: .leading) {
-                Text("Savir's Usage Today")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
+        VStack(spacing: 12) {
+            // Device Selector
+            if !pairedDevices.isEmpty {
                 HStack {
-                    Text(Date(), style: .date)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                    Button(action: {
+                        showingDevicePicker = true
+                    }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "iphone")
+                                .foregroundColor(.blue)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(selectedDevice?.childName ?? "Select Device")
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                                
+                                Text(selectedDevice?.deviceName ?? "No device selected")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            Image(systemName: "chevron.down")
+                                .foregroundColor(.blue)
+                                .font(.caption)
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+                .padding(.horizontal)
+            }
+            
+            // Usage Header
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("\(selectedDevice?.childName ?? "Child")'s Usage Today")
+                        .font(.title2)
+                        .fontWeight(.bold)
                     
-                    if !isLoading {
-                        Text("• Last updated: \(lastRefresh, style: .time)")
-                            .font(.caption)
+                    HStack {
+                        Text(Date(), style: .date)
+                            .font(.subheadline)
                             .foregroundColor(.secondary)
+                        
+                        if !isLoading {
+                            Text("• Last updated: \(lastRefresh, style: .time)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
+                
+                Spacer()
+                
+                Button(action: onRefresh) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.title2)
+                        .foregroundColor(.blue)
+                        .rotationEffect(.degrees(isLoading ? 360 : 0))
+                        .animation(
+                            isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default,
+                            value: isLoading
+                        )
+                }
+                .disabled(isLoading)
             }
-            
-            Spacer()
-            
-            Button(action: onRefresh) {
-                Image(systemName: "arrow.clockwise")
-                    .font(.title2)
-                    .foregroundColor(.blue)
-                    .rotationEffect(.degrees(isLoading ? 360 : 0))
-                    .animation(
-                        isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default,
-                        value: isLoading
-                    )
-            }
-            .disabled(isLoading)
+            .padding(.horizontal)
         }
-        .padding(.horizontal)
         .padding(.top, 10)
+        .sheet(isPresented: $showingDevicePicker) {
+            DevicePickerView(
+                pairedDevices: pairedDevices,
+                selectedDeviceId: $selectedDeviceId
+            )
+        }
     }
 }
 
@@ -660,6 +740,90 @@ struct DataInfoCard: View {
         .background(Color(.systemBlue).opacity(0.1))
         .cornerRadius(8)
         .padding(.horizontal)
+    }
+}
+
+// MARK: - Device Picker View
+struct DevicePickerView: View {
+    let pairedDevices: [PairedChildDevice]
+    @Binding var selectedDeviceId: String?
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            List {
+                ForEach(pairedDevices) { device in
+                    Button(action: {
+                        selectedDeviceId = device.childUserId
+                        dismiss()
+                    }) {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                Circle()
+                                    .fill(device.isOnline ? Color.green : Color.gray)
+                                    .frame(width: 12, height: 12)
+                                
+                                Image(systemName: "iphone")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.blue)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(device.childName)
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                                
+                                Text(device.deviceName)
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                
+                                HStack(spacing: 8) {
+                                    HStack(spacing: 4) {
+                                        Circle()
+                                            .fill(device.isOnline ? Color.green : Color.gray)
+                                            .frame(width: 6, height: 6)
+                                        
+                                        Text(device.isOnline ? "Online" : "Offline")
+                                            .font(.caption)
+                                            .foregroundColor(device.isOnline ? .green : .gray)
+                                    }
+                                    
+                                    Text("Last sync: \(formatLastSyncTime(device.lastSyncAt))")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            
+                            Spacer()
+                            
+                            if device.childUserId == selectedDeviceId {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.blue)
+                                    .font(.title2)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+            .navigationTitle("Select Device")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+    
+    private func formatLastSyncTime(_ timestamp: Timestamp) -> String {
+        let date = timestamp.dateValue()
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 

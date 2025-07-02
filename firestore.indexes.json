@@ -1,4 +1,65 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "parentChildRelationships",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "parentUserId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "isActive",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "parentChildRelationships",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "childUserId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "isActive",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "lastActiveAt",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "userType",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "parentUserId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "isRead",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestamp",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
   "fieldOverrides": []
 } 

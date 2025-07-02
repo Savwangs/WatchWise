@@ -9,379 +9,403 @@ import Foundation
 import UserNotifications
 import UIKit
 import FirebaseFirestore
+import FirebaseAuth
 
 @MainActor
-class NotificationManager: NSObject, ObservableObject {
+class NotificationManager: ObservableObject {
     static let shared = NotificationManager()
     
-    @Published var hasNotificationPermission = false
-    @Published var pendingNotifications: [PendingNotification] = []
-    @Published var unreadMessageCount = 0
+    @Published var notifications: [AppNotification] = []
+    @Published var unreadCount: Int = 0
+    @Published var isLoading = false
     
-    private let db = Firestore.firestore()
+    private let firebaseManager = FirebaseManager.shared
+    private var listenerRegistration: ListenerRegistration?
     
-    override init() {
-        super.init()
-        checkNotificationPermission()
-    }
-    
-    // MARK: - Permission Management
-    func requestNotificationPermission() async -> Bool {
-        do {
-            let granted = try await UNUserNotificationCenter.current().requestAuthorization(
-                options: [.alert, .badge, .sound, .provisional]
-            )
+    struct AppNotification: Identifiable, Codable {
+        let id: String
+        let parentUserId: String
+        let childUserId: String
+        let childName: String
+        let type: NotificationType
+        let title: String
+        let message: String
+        let timestamp: Timestamp
+        var isRead: Bool
+        
+        enum NotificationType: String, Codable {
+            case inactivity_alert
+            case device_unlinked
+            case screen_time_limit
+            case bedtime_reminder
+            case app_usage_alert
+            case general
             
-            await MainActor.run {
-                self.hasNotificationPermission = granted
-                if granted {
-                    UIApplication.shared.registerForRemoteNotifications()
+            var icon: String {
+                switch self {
+                case .inactivity_alert:
+                    return "⏰"
+                case .device_unlinked:
+                    return "🔗"
+                case .screen_time_limit:
+                    return "📱"
+                case .bedtime_reminder:
+                    return "🌙"
+                case .app_usage_alert:
+                    return "⚠️"
+                case .general:
+                    return "📢"
                 }
             }
             
-            return granted
-            
-        } catch {
-            print("❌ Error requesting notification permission: \(error)")
-            return false
+            var color: String {
+                switch self {
+                case .inactivity_alert:
+                    return "orange"
+                case .device_unlinked:
+                    return "red"
+                case .screen_time_limit:
+                    return "blue"
+                case .bedtime_reminder:
+                    return "purple"
+                case .app_usage_alert:
+                    return "yellow"
+                case .general:
+                    return "gray"
+                }
+            }
         }
     }
     
-    private func checkNotificationPermission() {
-        UNUserNotificationCenter.current().getNotificationSettings { settings in
-            DispatchQueue.main.async {
-                self.hasNotificationPermission = settings.authorizationStatus == .authorized ||
-                                               settings.authorizationStatus == .provisional
+    private init() {
+        setupNotificationPermissions()
+    }
+    
+    // MARK: - Notification Permissions
+    
+    private func setupNotificationPermissions() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
+            if granted {
+                print("✅ Notification permissions granted")
+                DispatchQueue.main.async {
+                    UIApplication.shared.registerForRemoteNotifications()
+                }
+            } else {
+                print("❌ Notification permissions denied: \(error?.localizedDescription ?? "Unknown error")")
             }
+        }
+    }
+    
+    // MARK: - Real-time Notifications
+    
+    func startListeningForNotifications() {
+        guard let currentUser = Auth.auth().currentUser else {
+            print("❌ No authenticated user for notifications")
+            return
+        }
+        
+        stopListeningForNotifications()
+        
+        print("🔄 Starting to listen for notifications for user: \(currentUser.uid)")
+        
+        listenerRegistration = firebaseManager.db.collection("notifications")
+            .whereField("parentUserId", isEqualTo: currentUser.uid)
+            .order(by: "timestamp", descending: true)
+            .addSnapshotListener { [weak self] snapshot, error in
+                guard let self = self else { return }
+                
+                if let error = error {
+                    print("❌ Error listening for notifications: \(error)")
+                    return
+                }
+                
+                guard let snapshot = snapshot else {
+                    print("❌ No snapshot for notifications")
+                    return
+                }
+                
+                let newNotifications = snapshot.documents.compactMap { document -> AppNotification? in
+                    let data = document.data()
+                    
+                    guard let parentUserId = data["parentUserId"] as? String,
+                          let childUserId = data["childUserId"] as? String,
+                          let childName = data["childName"] as? String,
+                          let typeString = data["type"] as? String,
+                          let type = AppNotification.NotificationType(rawValue: typeString),
+                          let title = data["title"] as? String,
+                          let message = data["message"] as? String,
+                          let timestamp = data["timestamp"] as? Timestamp,
+                          let isRead = data["isRead"] as? Bool else {
+                        return nil
+                    }
+                    
+                    return AppNotification(
+                        id: document.documentID,
+                        parentUserId: parentUserId,
+                        childUserId: childUserId,
+                        childName: childName,
+                        type: type,
+                        title: title,
+                        message: message,
+                        timestamp: timestamp,
+                        isRead: isRead
+                    )
+                }
+                
+                DispatchQueue.main.async {
+                    self.notifications = newNotifications
+                    self.unreadCount = newNotifications.filter { !$0.isRead }.count
+                    print("📱 Updated notifications: \(newNotifications.count) total, \(self.unreadCount) unread")
+                }
+            }
+    }
+    
+    func stopListeningForNotifications() {
+        listenerRegistration?.remove()
+        listenerRegistration = nil
+        print("🛑 Stopped listening for notifications")
+    }
+    
+    // MARK: - Notification Management
+    
+    func markNotificationAsRead(notificationId: String) async {
+        do {
+            try await firebaseManager.db.collection("notifications")
+                .document(notificationId)
+                .updateData([
+                    "isRead": true,
+                    "readAt": Timestamp()
+                ])
+            
+            print("✅ Marked notification as read: \(notificationId)")
+        } catch {
+            print("❌ Error marking notification as read: \(error)")
+        }
+    }
+    
+    func markAllNotificationsAsRead() async {
+        guard let currentUser = Auth.auth().currentUser else { return }
+        
+        do {
+            let snapshot = try await firebaseManager.db.collection("notifications")
+                .whereField("parentUserId", isEqualTo: currentUser.uid)
+                .whereField("isRead", isEqualTo: false)
+                .getDocuments()
+            
+            if snapshot.documents.isEmpty {
+                print("✅ No unread notifications to mark")
+                return
+            }
+            
+            let batch = firebaseManager.db.batch()
+            
+            for doc in snapshot.documents {
+                batch.updateData([
+                    "isRead": true,
+                    "readAt": Timestamp()
+                ], forDocument: doc.reference)
+            }
+            
+            try await batch.commit()
+            print("✅ Marked \(snapshot.documents.count) notifications as read")
+            
+        } catch {
+            print("❌ Error marking all notifications as read: \(error)")
+        }
+    }
+    
+    func deleteNotification(notificationId: String) async {
+        do {
+            try await firebaseManager.db.collection("notifications")
+                .document(notificationId)
+                .delete()
+            
+            print("✅ Deleted notification: \(notificationId)")
+        } catch {
+            print("❌ Error deleting notification: \(error)")
+        }
+    }
+    
+    func deleteAllNotifications() async {
+        guard let currentUser = Auth.auth().currentUser else { return }
+        
+        do {
+            let snapshot = try await firebaseManager.db.collection("notifications")
+                .whereField("parentUserId", isEqualTo: currentUser.uid)
+                .getDocuments()
+            
+            if snapshot.documents.isEmpty {
+                print("✅ No notifications to delete")
+                return
+            }
+            
+            let batch = firebaseManager.db.batch()
+            
+            for doc in snapshot.documents {
+                batch.deleteDocument(doc.reference)
+            }
+            
+            try await batch.commit()
+            print("✅ Deleted \(snapshot.documents.count) notifications")
+            
+        } catch {
+            print("❌ Error deleting all notifications: \(error)")
         }
     }
     
     // MARK: - Local Notifications
-    func scheduleScreenTimeReminder(
-        title: String,
-        body: String,
-        timeInterval: TimeInterval,
-        identifier: String = UUID().uuidString
-    ) async throws {
+    
+    func scheduleLocalNotification(title: String, body: String, timeInterval: TimeInterval = 1) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
-        content.badge = NSNumber(value: unreadMessageCount + 1)
-        content.categoryIdentifier = NotificationCategory.screenTimeReminder.rawValue
         
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: timeInterval, repeats: false)
-        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("❌ Error scheduling local notification: \(error)")
+            } else {
+                print("✅ Local notification scheduled")
+            }
+        }
+    }
+    
+    func scheduleBedtimeReminder(at time: Date, childName: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Bedtime Reminder"
+        content.body = "It's time for \(childName) to put their device away for the night."
+        content.sound = .default
+        
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.hour, .minute], from: time)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+        
+        let request = UNNotificationRequest(
+            identifier: "bedtime-reminder-\(childName)",
+            content: content,
+            trigger: trigger
+        )
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("❌ Error scheduling bedtime reminder: \(error)")
+            } else {
+                print("✅ Bedtime reminder scheduled for \(childName)")
+            }
+        }
+    }
+    
+    func cancelBedtimeReminder(for childName: String) {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(
+            withIdentifiers: ["bedtime-reminder-\(childName)"]
+        )
+        print("✅ Cancelled bedtime reminder for \(childName)")
+    }
+    
+    // MARK: - Notification Analytics
+    
+    func logNotificationInteraction(notificationId: String, action: String) {
+        Task {
+            do {
+                try await firebaseManager.db.collection("notificationAnalytics").addDocument(data: [
+                    "notificationId": notificationId,
+                    "action": action,
+                    "userId": Auth.auth().currentUser?.uid ?? "",
+                    "timestamp": Timestamp()
+                ])
+            } catch {
+                print("❌ Error logging notification interaction: \(error)")
+            }
+        }
+    }
+    
+    // MARK: - Notification Settings
+    
+    func updateNotificationSettings(settings: NotificationSettings) async {
+        guard let currentUser = Auth.auth().currentUser else { return }
         
         do {
-            try await UNUserNotificationCenter.current().add(request)
-            print("✅ Screen time reminder scheduled for \(timeInterval) seconds")
+            try await firebaseManager.settingsCollection.document(currentUser.uid).setData([
+                "notificationSettings": [
+                    "inactivityAlerts": settings.inactivityAlerts,
+                    "screenTimeAlerts": settings.screenTimeAlerts,
+                    "bedtimeReminders": settings.bedtimeReminders,
+                    "appUsageAlerts": settings.appUsageAlerts,
+                    "deviceUnlinkAlerts": settings.deviceUnlinkAlerts,
+                    "quietHours": settings.quietHours,
+                    "quietHoursStart": settings.quietHoursStart,
+                    "quietHoursEnd": settings.quietHoursEnd
+                ],
+                "updatedAt": Timestamp()
+            ], merge: true)
+            
+            print("✅ Updated notification settings")
         } catch {
-            print("❌ Error scheduling notification: \(error)")
-            throw NotificationError.schedulingFailed
+            print("❌ Error updating notification settings: \(error)")
         }
     }
     
-    func scheduleBreakReminder(
-        appName: String,
-        usageTime: TimeInterval,
-        identifier: String = UUID().uuidString
-    ) async throws {
-        let content = UNMutableNotificationContent()
-        content.title = "Take a Break! 🌟"
-        content.body = "You've been using \(appName) for \(Int(usageTime/60)) minutes. Time for a screen break!"
-        content.sound = .default
-        content.badge = NSNumber(value: unreadMessageCount + 1)
-        content.categoryIdentifier = NotificationCategory.breakReminder.rawValue
+    func getNotificationSettings() async -> NotificationSettings? {
+        guard let currentUser = Auth.auth().currentUser else { return nil }
         
-        // Schedule immediately
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
-        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
-        
-        try await UNUserNotificationCenter.current().add(request)
-    }
-    
-    func scheduleEncouragementNotification(
-        message: String,
-        identifier: String = UUID().uuidString
-    ) async throws {
-        let content = UNMutableNotificationContent()
-        content.title = "Great Job! 🎉"
-        content.body = message
-        content.sound = .default
-        content.badge = NSNumber(value: unreadMessageCount + 1)
-        content.categoryIdentifier = NotificationCategory.encouragement.rawValue
-        
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
-        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
-        
-        try await UNUserNotificationCenter.current().add(request)
-    }
-    
-    // MARK: - Message Notifications
-    func showMessageNotification(
-        from sender: String,
-        message: String,
-        messageId: String,
-        isFromParent: Bool = true
-    ) async throws {
-        let content = UNMutableNotificationContent()
-        content.title = isFromParent ? "Message from Parent 👨‍👩‍👧‍👦" : "Message from Child 👶"
-        content.body = message
-        content.sound = .default
-        content.badge = NSNumber(value: unreadMessageCount + 1)
-        content.categoryIdentifier = NotificationCategory.message.rawValue
-        content.userInfo = [
-            "messageId": messageId,
-            "sender": sender,
-            "isFromParent": isFromParent
-        ]
-        
-        // Add action buttons
-        let replyAction = UNNotificationAction(
-            identifier: NotificationAction.reply.rawValue,
-            title: "Reply",
-            options: [.foreground]
-        )
-        
-        let markReadAction = UNNotificationAction(
-            identifier: NotificationAction.markRead.rawValue,
-            title: "Mark as Read",
-            options: []
-        )
-        
-        let category = UNNotificationCategory(
-            identifier: NotificationCategory.message.rawValue,
-            actions: [replyAction, markReadAction],
-            intentIdentifiers: [],
-            options: [.customDismissAction]
-        )
-        
-        UNUserNotificationCenter.current().setNotificationCategories([category])
-        
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
-        let request = UNNotificationRequest(identifier: messageId, content: content, trigger: trigger)
-        
-        try await UNUserNotificationCenter.current().add(request)
-        updateUnreadMessageCount(increment: true)
-    }
-    
-    // MARK: - Badge Management
-    func updateUnreadMessageCount(increment: Bool) {
-        if increment {
-            unreadMessageCount += 1
-        } else {
-            unreadMessageCount = max(0, unreadMessageCount - 1)
-        }
-        
-        DispatchQueue.main.async {
-            UIApplication.shared.applicationIconBadgeNumber = self.unreadMessageCount
-        }
-    }
-    
-    func clearBadge() {
-        unreadMessageCount = 0
-        UIApplication.shared.applicationIconBadgeNumber = 0
-    }
-    
-    func resetUnreadCount(to count: Int) {
-        unreadMessageCount = count
-        UIApplication.shared.applicationIconBadgeNumber = count
-    }
-    
-    // MARK: - Notification Management
-    func cancelNotification(identifier: String) {
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [identifier])
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
-    }
-    
-    func cancelAllNotifications() {
-        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
-        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
-        clearBadge()
-    }
-    
-    func getPendingNotifications() async -> [UNNotificationRequest] {
-        return await UNUserNotificationCenter.current().pendingNotificationRequests()
-    }
-    
-    func getDeliveredNotifications() async -> [UNNotification] {
-        return await UNUserNotificationCenter.current().deliveredNotifications()
-    }
-    
-    // MARK: - Screen Time Alerts
-    func checkAndScheduleScreenTimeAlerts(
-        for userId: String,
-        currentUsage: [String: TimeInterval],
-        limits: [String: TimeInterval]
-    ) async {
-        for (appId, usage) in currentUsage {
-            guard let limit = limits[appId] else { continue }
+        do {
+            let document = try await firebaseManager.settingsCollection.document(currentUser.uid).getDocument()
             
-            let percentUsed = usage / limit
-            
-            // Alert at 75% of limit
-            if percentUsed >= 0.75 && percentUsed < 0.9 {
-                try? await scheduleScreenTimeReminder(
-                    title: "Screen Time Alert 📱",
-                    body: "You've used 75% of your \(appId) time limit today",
-                    timeInterval: 1,
-                    identifier: "alert_75_\(appId)"
-                )
+            guard let data = document.data(),
+                  let settingsData = data["notificationSettings"] as? [String: Any] else {
+                return NotificationSettings.defaultSettings
             }
             
-            // Alert at 90% of limit
-            if percentUsed >= 0.9 && percentUsed < 1.0 {
-                try? await scheduleScreenTimeReminder(
-                    title: "Screen Time Warning ⚠️",
-                    body: "You're close to your \(appId) time limit for today",
-                    timeInterval: 1,
-                    identifier: "alert_90_\(appId)"
-                )
-            }
-            
-            // Alert when limit exceeded
-            if percentUsed >= 1.0 {
-                try? await scheduleScreenTimeReminder(
-                    title: "Time Limit Reached 🚫",
-                    body: "You've reached your daily limit for \(appId)",
-                    timeInterval: 1,
-                    identifier: "alert_limit_\(appId)"
-                )
-            }
-        }
-    }
-    
-    // MARK: - Healthy Usage Encouragement
-    func scheduleHealthyUsageReminders() async {
-        let healthyReminders = [
-            (title: "Eye Break Time! 👀", body: "Look at something 20 feet away for 20 seconds", interval: 1200.0), // 20 minutes
-            (title: "Stretch Break! 🤸‍♀️", body: "Stand up and stretch for a minute", interval: 1800.0), // 30 minutes
-            (title: "Hydration Check! 💧", body: "Don't forget to drink some water", interval: 2700.0), // 45 minutes
-            (title: "Move Your Body! 🚶‍♀️", body: "Take a quick walk around", interval: 3600.0) // 1 hour
-        ]
-        
-        for (index, reminder) in healthyReminders.enumerated() {
-            try? await scheduleScreenTimeReminder(
-                title: reminder.title,
-                body: reminder.body,
-                timeInterval: reminder.interval,
-                identifier: "healthy_reminder_\(index)"
+            return NotificationSettings(
+                inactivityAlerts: settingsData["inactivityAlerts"] as? Bool ?? true,
+                screenTimeAlerts: settingsData["screenTimeAlerts"] as? Bool ?? true,
+                bedtimeReminders: settingsData["bedtimeReminders"] as? Bool ?? true,
+                appUsageAlerts: settingsData["appUsageAlerts"] as? Bool ?? true,
+                deviceUnlinkAlerts: settingsData["deviceUnlinkAlerts"] as? Bool ?? true,
+                quietHours: settingsData["quietHours"] as? Bool ?? false,
+                quietHoursStart: settingsData["quietHoursStart"] as? String ?? "22:00",
+                quietHoursEnd: settingsData["quietHoursEnd"] as? String ?? "08:00"
             )
+        } catch {
+            print("❌ Error getting notification settings: \(error)")
+            return NotificationSettings.defaultSettings
+        }
+    }
+    
+    // MARK: - Cleanup
+    
+    deinit {
+        Task { @MainActor in
+            stopListeningForNotifications()
         }
     }
 }
 
-// MARK: - UNUserNotificationCenterDelegate
-extension NotificationManager: UNUserNotificationCenterDelegate {
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        // Show notification even when app is in foreground
-        completionHandler([.banner, .sound, .badge])
-    }
+// MARK: - Notification Settings Model
+
+struct NotificationSettings {
+    var inactivityAlerts: Bool
+    var screenTimeAlerts: Bool
+    var bedtimeReminders: Bool
+    var appUsageAlerts: Bool
+    var deviceUnlinkAlerts: Bool
+    var quietHours: Bool
+    var quietHoursStart: String
+    var quietHoursEnd: String
     
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse,
-        withCompletionHandler completionHandler: @escaping () -> Void
-    ) {
-        let userInfo = response.notification.request.content.userInfo
-        
-        switch response.actionIdentifier {
-        case NotificationAction.reply.rawValue:
-            handleReplyAction(userInfo: userInfo)
-            
-        case NotificationAction.markRead.rawValue:
-            handleMarkReadAction(userInfo: userInfo)
-            
-        case UNNotificationDefaultActionIdentifier:
-            handleDefaultAction(userInfo: userInfo)
-            
-        default:
-            break
-        }
-        
-        completionHandler()
-    }
-    
-    private func handleReplyAction(userInfo: [AnyHashable: Any]) {
-        guard let messageId = userInfo["messageId"] as? String else { return }
-        
-        // Navigate to messages view or show reply interface
-        NotificationCenter.default.post(
-            name: .notificationReplyTapped,
-            object: nil,
-            userInfo: ["messageId": messageId]
-        )
-    }
-    
-    private func handleMarkReadAction(userInfo: [AnyHashable: Any]) {
-        guard let messageId = userInfo["messageId"] as? String else { return }
-        
-        Task {
-            try? await MessagingManager.shared.markMessageAsRead(messageId: messageId)
-            updateUnreadMessageCount(increment: false)
-        }
-    }
-    
-    private func handleDefaultAction(userInfo: [AnyHashable: Any]) {
-        // Open the app to the relevant screen
-        if let messageId = userInfo["messageId"] as? String {
-            NotificationCenter.default.post(
-                name: .notificationTapped,
-                object: nil,
-                userInfo: ["messageId": messageId]
-            )
-        }
-    }
+    static let defaultSettings = NotificationSettings(
+        inactivityAlerts: true,
+        screenTimeAlerts: true,
+        bedtimeReminders: true,
+        appUsageAlerts: true,
+        deviceUnlinkAlerts: true,
+        quietHours: false,
+        quietHoursStart: "22:00",
+        quietHoursEnd: "08:00"
+    )
 }
 
-// MARK: - Supporting Types
-struct PendingNotification: Identifiable {
-    let id = UUID()
-    let title: String
-    let body: String
-    let scheduledDate: Date
-    let identifier: String
-}
 
-enum NotificationCategory: String, CaseIterable {
-    case message = "MESSAGE"
-    case screenTimeReminder = "SCREEN_TIME_REMINDER"
-    case breakReminder = "BREAK_REMINDER"
-    case encouragement = "ENCOURAGEMENT"
-}
-
-enum NotificationAction: String, CaseIterable {
-    case reply = "REPLY"
-    case markRead = "MARK_READ"
-    case snooze = "SNOOZE"
-    case dismiss = "DISMISS"
-}
-
-enum NotificationError: LocalizedError {
-    case permissionDenied
-    case schedulingFailed
-    case invalidData
-    
-    var errorDescription: String? {
-        switch self {
-        case .permissionDenied:
-            return "Notification permission denied"
-        case .schedulingFailed:
-            return "Failed to schedule notification"
-        case .invalidData:
-            return "Invalid notification data"
-        }
-    }
-}
-
-// MARK: - Notification Names
-extension Notification.Name {
-    static let notificationTapped = Notification.Name("notificationTapped")
-    static let notificationReplyTapped = Notification.Name("notificationReplyTapped")
-    static let messageReceived = Notification.Name("messageReceived")
-}
