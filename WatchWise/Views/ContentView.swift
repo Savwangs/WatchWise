@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var showSplashScreen = true
     @State private var hasSeenOnboarding = false
     @State private var showOnboarding = false
+    @State private var forceRefresh = false
     
     var body: some View {
         ZStack {
@@ -39,29 +40,17 @@ struct ContentView: View {
                     if let userType = authManager.currentUser?.userType {
                         // User has selected their type - route based on type
                         if userType == "Child" {
-                            // FIXED: Child flow - check if they've completed initial setup
+                            // Child flow - check if they've completed initial setup
                             if authManager.hasCompletedOnboarding {
-                                // DEMO DATA - START (Child has completed setup, show child home with welcome back)
-                                // Existing child user - go directly to child home with welcome back message
+                                // Existing child user - go directly to child home
                                 ChildHomeView()
                                     .onAppear {
                                         print("👶 Child user - showing ChildHomeView (completed onboarding)")
                                     }
-                                // DEMO DATA - END
-                                
-                                /* PRODUCTION CODE - Uncomment when ready for production
-                                // Check if device is actually paired in production
-                                if let currentUser = authManager.currentUser, currentUser.isDevicePaired {
-                                    ChildHomeView()
-                                } else {
-                                    // Device not paired - should not happen in normal flow
-                                    GenerateCodeView(onCodeGenerated: { _ in }, onPermissionRequested: { })
-                                }
-                                */
                             } else {
                                 // New child user - hasn't completed setup yet
                                 if authManager.isChildInSetup {
-                                    // NEW: For new child users, start with permission request for Apple Store compliance
+                                    // For new child users, start with permission request
                                     NavigationView {
                                         PermissionRequestView(
                                             onPermissionGranted: {
@@ -73,7 +62,6 @@ struct ContentView: View {
                                     .onAppear {
                                         print("👶 Child user - showing PermissionRequestView (in setup)")
                                     }
-                                    // DEMO DATA - END
                                 } else {
                                     // Fallback - shouldn't happen in normal flow
                                     ChildHomeView()
@@ -134,6 +122,12 @@ struct ContentView: View {
             }
         }
         .environmentObject(authManager)
+        .onReceive(NotificationCenter.default.publisher(for: .showChildHome)) { _ in
+            // Force refresh of the view to trigger navigation
+            DispatchQueue.main.async {
+                forceRefresh.toggle()
+            }
+        }
     }
 }
 

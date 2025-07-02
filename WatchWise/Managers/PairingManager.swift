@@ -220,12 +220,14 @@ class PairingManager: ObservableObject {
             
             print("✅ Pairing request marked as active")
             
-            // Update child's device pairing status
+            // Update child's device pairing status and store name/device info
             print("🔍 Updating child's device pairing status...")
             try await firebaseManager.usersCollection.document(childUserId).updateData([
                 "isDevicePaired": true,
                 "pairedWithParent": parentUserId,
-                "pairedAt": Timestamp()
+                "pairedAt": Timestamp(),
+                "name": childName,
+                "deviceName": deviceName
             ])
             
             print("✅ Child's device pairing status updated")
@@ -324,7 +326,9 @@ class PairingManager: ObservableObject {
                     parentId: parentUserId,
                     pairedAt: data["createdAt"] as? Timestamp ?? Timestamp(),
                     isActive: data["isActive"] as? Bool ?? true,
-                    lastSyncAt: data["lastSyncAt"] as? Timestamp ?? Timestamp(date: Date().addingTimeInterval(-300)) // 5 minutes ago as default
+                    lastSyncAt: data["lastSyncAt"] as? Timestamp ?? Timestamp(date: Date().addingTimeInterval(-300)), // 5 minutes ago as default
+                    lastHeartbeatAt: data["lastHeartbeatAt"] as? Timestamp,
+                    missedHeartbeats: data["missedHeartbeats"] as? Int ?? 0
                 )
             }
             
@@ -780,11 +784,37 @@ struct PairedChildDevice: Identifiable {
     let pairedAt: Timestamp
     let isActive: Bool
     let lastSyncAt: Timestamp
+    let lastHeartbeatAt: Timestamp?
+    let missedHeartbeats: Int
     
     var isOnline: Bool {
-        // Simple online check based on last sync time (within 30 minutes for demo)
-        let thirtyMinutesAgo = Date().addingTimeInterval(-1800)
-        return lastSyncAt.dateValue() > thirtyMinutesAgo
+        // Check if last heartbeat was within 20 minutes (allowing for some delay)
+        if let lastHeartbeat = lastHeartbeatAt {
+            let twentyMinutesAgo = Date().addingTimeInterval(-1200) // 20 minutes
+            return lastHeartbeat.dateValue() > twentyMinutesAgo
+        } else {
+            // Fallback to old method if no heartbeat data
+            let thirtyMinutesAgo = Date().addingTimeInterval(-1800)
+            return lastSyncAt.dateValue() > thirtyMinutesAgo
+        }
+    }
+    
+    var connectionStatus: String {
+        if isOnline {
+            return "Online"
+        } else if let lastHeartbeat = lastHeartbeatAt {
+            let timeSinceHeartbeat = Date().timeIntervalSince(lastHeartbeat.dateValue())
+            let hours = Int(timeSinceHeartbeat) / 3600
+            let minutes = Int(timeSinceHeartbeat) % 3600 / 60
+            
+            if hours > 0 {
+                return "Offline (\(hours)h \(minutes)m ago)"
+            } else {
+                return "Offline (\(minutes)m ago)"
+            }
+        } else {
+            return "Offline"
+        }
     }
 }
 

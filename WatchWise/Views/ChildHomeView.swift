@@ -21,8 +21,7 @@ struct ChildHomeView: View {
                 VStack(spacing: 20) {
                     // Welcome Header
                     VStack(spacing: 8) {
-                        // DEMO DATA - START (Remove in production)
-                        Text(authManager.isNewSignUp ? "Connection Successful!" : "Welcome back, Savir!")
+                        Text(authManager.isNewSignUp ? "Connection Successful!" : "Welcome back, \(authManager.currentUser?.name ?? "Child")!")
                             .font(.title)
                             .fontWeight(.bold)
                             .padding(.top, 20)
@@ -30,18 +29,6 @@ struct ChildHomeView: View {
                         Text("Messages from Parent")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
-                        // DEMO DATA - END (Remove in production)
-                        
-                        /* PRODUCTION CODE - Uncomment when ready for production
-                        Text("Welcome back, \(authManager.currentUser?.name ?? "")!")
-                            .font(.title)
-                            .fontWeight(.bold)
-                            .padding(.top, 20)
-                        
-                        Text("Messages from Parent")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        */
                     }
                     
                     // Messages List
@@ -91,21 +78,11 @@ struct ChildHomeView: View {
                             Image(systemName: "iphone")
                                 .foregroundColor(.blue)
                             VStack(alignment: .leading, spacing: 4) {
-                                // DEMO DATA - START (Remove in production)
-                                Text("Savir's iPhone")
+                                Text(authManager.currentUser?.deviceName ?? "This Device")
                                     .font(.body)
                                 Text("Connected to Parent Device")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
-                                // DEMO DATA - END (Remove in production)
-                                
-                                /* PRODUCTION CODE - Uncomment when ready for production
-                                Text(authManager.currentUser?.deviceName ?? "This Device")
-                                    .font(.body)
-                                Text("Connected to \(authManager.parentDeviceName ?? "Parent Device")")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                */
                             }
                             Spacer()
                             
@@ -120,13 +97,7 @@ struct ChildHomeView: View {
                         HStack {
                             Image(systemName: "person.circle.fill")
                                 .foregroundColor(.gray)
-                            // DEMO DATA - START (Remove in production)
-                            Text("Savir")
-                            // DEMO DATA - END (Remove in production)
-                            
-                            /* PRODUCTION CODE - Uncomment when ready for production
                             Text(authManager.currentUser?.name ?? "Child User")
-                            */
                         }
                         
                         Button(action: {
@@ -184,6 +155,51 @@ struct ChildHomeView: View {
                             Label("Help & Support", systemImage: "questionmark.circle.fill")
                         }
                     }
+                    
+                    // Debug section for heartbeat testing
+                    Section("Debug Info") {
+                        HStack {
+                            Label("Heartbeat Status", systemImage: "heart.fill")
+                            Spacer()
+                            Text(activityManager.isMonitoring ? "Active" : "Inactive")
+                                .foregroundColor(activityManager.isMonitoring ? .green : .red)
+                        }
+                        
+                        HStack {
+                            Label("Missed Heartbeats", systemImage: "exclamationmark.triangle.fill")
+                            Spacer()
+                            Text("\(activityManager.missedHeartbeats)")
+                                .foregroundColor(activityManager.missedHeartbeats > 0 ? .red : .green)
+                        }
+                        
+                        HStack {
+                            Label("User Type", systemImage: "person.fill")
+                            Spacer()
+                            Text(authManager.currentUser?.userType ?? "Unknown")
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        if let lastActivity = activityManager.lastActivityTime {
+                            HStack {
+                                Label("Last Activity", systemImage: "clock.fill")
+                                Spacer()
+                                Text(lastActivity, style: .relative)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        
+                        Button("Send Test Heartbeat") {
+                            Task {
+                                await activityManager.sendHeartbeat()
+                            }
+                        }
+                        .foregroundColor(.blue)
+                        
+                        Button("Start Monitoring") {
+                            activityManager.startMonitoring()
+                        }
+                        .foregroundColor(.green)
+                    }
                 }
                 .navigationTitle("Settings")
                 .navigationBarTitleDisplayMode(.large)
@@ -202,17 +218,8 @@ struct ChildHomeView: View {
             Text("Are you sure you want to sign out? This will disconnect your device from your parent.")
         }
         .onAppear {
-            // Update sync time when child device appears
-            Task {
-                await activityManager.updateSyncTime()
-            }
-            // Start activity monitoring
+            // Start heartbeat monitoring for child device
             activityManager.startMonitoring()
-        }
-        .onReceive(Timer.publish(every: 120, on: .main, in: .common).autoconnect()) { _ in
-            Task {
-                await activityManager.updateSyncTime()
-            }
         }
     }
     

@@ -19,8 +19,10 @@ struct AppUser {
     var userType: String? // Add userType field
     let createdAt: Date
     var isEmailVerified: Bool
+    var name: String?
+    var deviceName: String?
     
-    init(id: String, email: String, isDevicePaired: Bool = false, hasCompletedOnboarding: Bool = false, userType: String? = nil, createdAt: Date = Date(), isEmailVerified: Bool = false) {
+    init(id: String, email: String, isDevicePaired: Bool = false, hasCompletedOnboarding: Bool = false, userType: String? = nil, createdAt: Date = Date(), isEmailVerified: Bool = false, name: String? = nil, deviceName: String? = nil) {
         self.id = id
         self.email = email
         self.isDevicePaired = isDevicePaired
@@ -28,6 +30,8 @@ struct AppUser {
         self.userType = userType
         self.createdAt = createdAt
         self.isEmailVerified = isEmailVerified
+        self.name = name
+        self.deviceName = deviceName
     }
 }
 
@@ -328,6 +332,8 @@ class AuthenticationManager: ObservableObject {
                 }
                 
                 let userType = data["userType"] as? String
+                let name = data["name"] as? String
+                let deviceName = data["deviceName"] as? String
                 
                 let appUser = AppUser(
                     id: userId,
@@ -336,7 +342,9 @@ class AuthenticationManager: ObservableObject {
                     hasCompletedOnboarding: data["hasCompletedOnboarding"] as? Bool ?? false,
                     userType: userType,
                     createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
-                    isEmailVerified: data["isEmailVerified"] as? Bool ?? false
+                    isEmailVerified: data["isEmailVerified"] as? Bool ?? false,
+                    name: name,
+                    deviceName: deviceName
                 )
                 
                 print("✅ User profile loaded: \(appUser.email), userType: \(userType ?? "nil"), onboarding: \(appUser.hasCompletedOnboarding)")

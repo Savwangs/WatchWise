@@ -107,7 +107,7 @@ export const updateDeviceActivity = functions.https.onCall(async (data, context)
     const userId = context.auth.uid;
     const { deviceInfo, activityType } = data;
     
-    console.log(`📱 Updating device activity for user: ${userId}`);
+    console.log(`📱 Updating device activity for user: ${userId}, type: ${activityType}`);
     
     // Update user's last activity
     await db.collection('users').doc(userId).update({
@@ -116,25 +116,50 @@ export const updateDeviceActivity = functions.https.onCall(async (data, context)
       lastActivityType: activityType || 'app_opened'
     });
     
-    // Update device status in parent-child relationships
-    const relationshipsQuery = db.collection('parentChildRelationships')
-      .where('childUserId', '==', userId)
-      .where('isActive', '==', true);
-    
-    const relationshipsSnapshot = await relationshipsQuery.get();
-    
-    if (!relationshipsSnapshot.empty) {
-      const batch = db.batch();
+    // If this is a heartbeat from a child device, update parent-child relationships
+    if (activityType === 'heartbeat') {
+      const relationshipsQuery = db.collection('parentChildRelationships')
+        .where('childUserId', '==', userId)
+        .where('isActive', '==', true);
       
-      relationshipsSnapshot.docs.forEach((doc) => {
-        batch.update(doc.ref, {
-          lastSyncAt: admin.firestore.Timestamp.now(),
-          childDeviceInfo: deviceInfo || null
+      const relationshipsSnapshot = await relationshipsQuery.get();
+      
+      if (!relationshipsSnapshot.empty) {
+        const batch = db.batch();
+        
+        relationshipsSnapshot.docs.forEach((doc) => {
+          batch.update(doc.ref, {
+            lastSyncAt: admin.firestore.Timestamp.now(),
+            childDeviceInfo: deviceInfo || null,
+            lastHeartbeatAt: admin.firestore.Timestamp.now(),
+            missedHeartbeats: 0 // Reset missed heartbeats on successful heartbeat
+          });
         });
-      });
+        
+        await batch.commit();
+        console.log(`✅ Updated ${relationshipsSnapshot.size} parent-child relationships with heartbeat`);
+      }
+    } else {
+      // For non-heartbeat activities, update relationships normally
+      const relationshipsQuery = db.collection('parentChildRelationships')
+        .where('childUserId', '==', userId)
+        .where('isActive', '==', true);
       
-      await batch.commit();
-      console.log(`✅ Updated ${relationshipsSnapshot.size} parent-child relationships`);
+      const relationshipsSnapshot = await relationshipsQuery.get();
+      
+      if (!relationshipsSnapshot.empty) {
+        const batch = db.batch();
+        
+        relationshipsSnapshot.docs.forEach((doc) => {
+          batch.update(doc.ref, {
+            lastSyncAt: admin.firestore.Timestamp.now(),
+            childDeviceInfo: deviceInfo || null
+          });
+        });
+        
+        await batch.commit();
+        console.log(`✅ Updated ${relationshipsSnapshot.size} parent-child relationships`);
+      }
     }
     
     return { success: true };
@@ -271,4 +296,103 @@ export const unlinkDevice = functions.https.onCall(async (data, context) => {
     console.error('❌ Error unlinking device:', error);
     throw new functions.https.HttpsError('internal', 'Failed to unlink device');
   }
-}); 
+});
+
+// Cloud Function to check for missed heartbeats and notify parents
+export const checkMissedHeartbeats = functions.pubsub
+  .schedule('every 20 minutes')
+  .onRun(async (context) => {
+    try {
+      console.log('💓 Checking for missed heartbeats...');
+      
+      const twentyMinutesAgo = admin.firestore.Timestamp.fromDate(
+        new Date(Date.now() - 20 * 60 * 1000)
+      );
+      
+      // Query for child devices that haven't sent a heartbeat in 20+ minutes
+      const missedHeartbeatsQuery = db.collection('parentChildRelationships')
+        .where('isActive', '==', true)
+        .where('lastHeartbeatAt', '<', twentyMinutesAgo);
+      
+      const snapshot = await missedHeartbeatsQuery.get();
+      
+      if (snapshot.empty) {
+        console.log('✅ No missed heartbeats found');
+        return null;
+      }
+      
+      console.log(`💓 Found ${snapshot.size} relationships with missed heartbeats`);
+      
+      // Process each relationship with missed heartbeats
+      for (const doc of snapshot.docs) {
+        const relationshipData = doc.data();
+        const childUserId = relationshipData.childUserId;
+        const parentUserId = relationshipData.parentUserId;
+        const childName = relationshipData.childName;
+        const lastHeartbeatAt = relationshipData.lastHeartbeatAt;
+        const currentMissedHeartbeats = relationshipData.missedHeartbeats || 0;
+        
+        // Calculate how many heartbeats have been missed
+        const timeSinceLastHeartbeat = Date.now() - lastHeartbeatAt.toDate().getTime();
+        const missedHeartbeats = Math.floor(timeSinceLastHeartbeat / (15 * 60 * 1000)); // 15 minutes per heartbeat
+        
+        // Only send notification if we haven't already sent one for this level
+        if (missedHeartbeats > currentMissedHeartbeats) {
+          // Update the missed heartbeat count
+          await doc.ref.update({
+            missedHeartbeats: missedHeartbeats
+          });
+          
+          // Determine notification message based on missed heartbeats
+          const [title, message] = getMissedHeartbeatMessage(missedHeartbeats, childName);
+          
+          // Create notification for parent
+          await db.collection('notifications').add({
+            parentUserId: parentUserId,
+            childUserId: childUserId,
+            childName: childName,
+            type: 'missed_heartbeat',
+            title: title,
+            message: message,
+            missedHeartbeats: missedHeartbeats,
+            timestamp: admin.firestore.Timestamp.now(),
+            isRead: false
+          });
+          
+          console.log(`📧 Sent missed heartbeat notification to parent ${parentUserId} for child ${childName}: ${title}`);
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('❌ Error checking missed heartbeats:', error);
+      throw error;
+    }
+  });
+
+// Helper function to get missed heartbeat notification message
+function getMissedHeartbeatMessage(missedHeartbeats: number, childName: string): [string, string] {
+  switch (missedHeartbeats) {
+    case 1:
+      return [
+        "First Heartbeat Missed",
+        `${childName}'s device missed its first heartbeat. This could indicate the app was closed or the device is having connectivity issues.`
+      ];
+    case 2:
+      return [
+        "Second Heartbeat Missed",
+        `${childName}'s device has missed 2 consecutive heartbeats. The app may have been deleted or the device is turned off.`
+      ];
+    case 3:
+    case 4:
+      return [
+        "Multiple Heartbeats Missed",
+        `${childName}'s device has missed ${missedHeartbeats} consecutive heartbeats. Please check if the WatchWise app is still installed and running.`
+      ];
+    default:
+      return [
+        "Extended Heartbeat Failure",
+        `${childName}'s device has been offline for over 5 hours. The WatchWise app may have been deleted or the device is experiencing issues.`
+      ];
+  }
+} 

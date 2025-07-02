@@ -274,21 +274,27 @@ struct DeviceCard: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     
-                    HStack(spacing: 8) {
-                        HStack(spacing: 4) {
-                            Circle()
-                                .fill(device.isOnline ? Color.green : Color.gray)
-                                .frame(width: 6, height: 6)
+                                            HStack(spacing: 8) {
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(device.isOnline ? Color.green : Color.gray)
+                                    .frame(width: 6, height: 6)
+                                
+                                Text(device.connectionStatus)
+                                    .font(.caption)
+                                    .foregroundColor(device.isOnline ? .green : .gray)
+                            }
                             
-                            Text(device.isOnline ? "Online" : "Offline")
-                                .font(.caption)
-                                .foregroundColor(device.isOnline ? .green : .gray)
+                            if device.missedHeartbeats > 0 {
+                                Text("\(device.missedHeartbeats) missed")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.red.opacity(0.1))
+                                    .cornerRadius(4)
+                            }
                         }
-                        
-                        Text("Last sync: \(formatLastSyncTime(device.lastSyncAt))")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
                 }
                 
                 Spacer()

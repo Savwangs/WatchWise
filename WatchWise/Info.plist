@@ -7,9 +7,5 @@
 		<string>remote-notification</string>
 		<string>processing</string>
 	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>WatchWise needs camera access to scan QR codes for device pairing.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>WatchWise needs photo library access to select QR codes for device pairing.</string>
 </dict>
 </plist>

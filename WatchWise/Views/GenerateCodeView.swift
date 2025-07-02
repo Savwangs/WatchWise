@@ -7,6 +7,7 @@
 
 import SwiftUI
 import FirebaseAuth
+import FirebaseFirestore
 
 struct GenerateCodeView: View {
     @StateObject private var pairingManager = PairingManager()
@@ -21,13 +22,14 @@ struct GenerateCodeView: View {
     @State private var alertMessage = ""
     @State private var isPairingCompleted = false
     @State private var pairingCheckTimer: Timer?
+    @State private var firebaseListener: ListenerRegistration?
     @EnvironmentObject var authManager: AuthenticationManager
     
     let onCodeGenerated: (String) -> Void
     let onPermissionRequested: () -> Void
     
     var body: some View {
-        VStack(spacing: 40) {
+        VStack(spacing: 30) {
             // Header with Sign Out Button
             VStack(spacing: 16) {
                 HStack {
@@ -39,6 +41,7 @@ struct GenerateCodeView: View {
                     }
                 }
                 .padding(.horizontal)
+                .padding(.top, 50) // Add top padding to avoid status bar
                 
                 Image(systemName: "link.circle.fill")
                     .font(.system(size: 60))
@@ -60,11 +63,11 @@ struct GenerateCodeView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
             }
-            .padding(.top, 60)
             
             // Name Input Section (shown first)
             if showNameInput {
                 VStack(spacing: 20) {
+                    Spacer()
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Your Name")
                             .font(.headline)
@@ -101,7 +104,7 @@ struct GenerateCodeView: View {
             
             // Code Generation Section
             else {
-                VStack(spacing: 24) {
+                VStack(spacing: 20) {
                     if isCodeGenerated, let codeData = pairingCodeData {
                         // Display Generated Code with QR Code
                         VStack(spacing: 20) {
@@ -146,10 +149,6 @@ struct GenerateCodeView: View {
                                         let impactFeedback = UIImpactFeedbackGenerator(style: .light)
                                         impactFeedback.impactOccurred()
                                     }
-                                
-                                Text("Tap to copy")
-                                    .font(.caption)
-                                    .foregroundColor(.blue)
                             }
                             
                             // Timer
@@ -170,9 +169,8 @@ struct GenerateCodeView: View {
                                     .fontWeight(.medium)
                                 
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("1. Have your parent open WatchWise")
-                                    Text("2. They should tap 'Pair Device'")
-                                    Text("3. Scan the QR code or enter the 6-digit code")
+                                    Text("1. Have your parent register on the WatchWise app")
+                                    Text("2. Then have them scan the QR code or manually enter the 6-digit code")
                                 }
                                 .font(.caption)
                                 .foregroundColor(.secondary)
@@ -188,27 +186,31 @@ struct GenerateCodeView: View {
                                 .font(.subheadline)
                                 .foregroundColor(.blue)
                         }
-                        .padding(.top)
+                        .padding(.top, 20)
                         .disabled(pairingManager.isLoading)
                         
-                        // Auto-redirect will happen when parent enters the code
-                        VStack(spacing: 12) {
-                            Text("You will be automatically redirected to your home page once your parent enters this code.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal)
-                            
-                            // Manual navigation button (fallback)
+                        // Manual navigation button (fallback)
+                        VStack(spacing: 8) {
                             Button(action: navigateToChildHome) {
-                                Text("Go to My Home Page (Manual)")
-                                    .font(.subheadline)
-                                    .foregroundColor(.blue)
+                                VStack(spacing: 4) {
+                                    Text("Go to My Home Page")
+                                        .font(.headline)
+                                        .foregroundColor(.white)
+                                    
+                                    Text("Wait for your parent to pair the devices, then click this")
+                                        .font(.caption)
+                                        .foregroundColor(.white.opacity(0.8))
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Color.green)
+                                .cornerRadius(12)
                             }
                         }
                         .padding(.top, 20)
                         
                     } else {
+                        Spacer()
                         // Generate Code Button
                         Button(action: generateCode) {
                             if pairingManager.isLoading {
@@ -225,9 +227,11 @@ struct GenerateCodeView: View {
                         .background(Color.blue)
                         .cornerRadius(12)
                         .disabled(pairingManager.isLoading)
+                        Spacer()
                     }
                 }
                 .padding(.horizontal, 32)
+                Spacer()
             }
             
             Spacer()
@@ -235,6 +239,7 @@ struct GenerateCodeView: View {
         .onDisappear {
             stopTimer()
             stopPairingCheckTimer()
+            stopFirebaseListener()
         }
         .alert("Error", isPresented: $showAlert) {
             Button("OK") { }
@@ -286,6 +291,7 @@ struct GenerateCodeView: View {
                     isCodeGenerated = true
                     startTimer(expirationDate: codeData.expiresAt)
                     startPairingCheckTimer(code: codeData.code)
+                    startFirebaseListener()
                     onCodeGenerated(codeData.code)
                     
                 case .failure(let error):
@@ -330,8 +336,11 @@ struct GenerateCodeView: View {
         
         // Check every 2 seconds if pairing is completed
         pairingCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+            // Check both demo data and real Firebase pairing status
             let isPaired = UserDefaults.standard.bool(forKey: "demoChildPaired_\(code)")
-            if isPaired {
+            let isFirebasePaired = self.authManager.currentUser?.isDevicePaired ?? false
+            
+            if isPaired || isFirebasePaired {
                 self.stopPairingCheckTimer()
                 self.navigateToChildHome()
             }
@@ -343,16 +352,43 @@ struct GenerateCodeView: View {
         pairingCheckTimer = nil
     }
     
+    private func startFirebaseListener() {
+        guard let currentUser = Auth.auth().currentUser else { return }
+        
+        // Listen for changes to the user's pairing status
+        firebaseListener = FirebaseManager.shared.usersCollection.document(currentUser.uid)
+            .addSnapshotListener { snapshot, error in
+                guard let data = snapshot?.data() else { return }
+                
+                let isPaired = data["isDevicePaired"] as? Bool ?? false
+                let hasCompletedOnboarding = data["hasCompletedOnboarding"] as? Bool ?? false
+                
+                if isPaired && hasCompletedOnboarding {
+                    // Pairing is completed, navigate to child home
+                    DispatchQueue.main.async {
+                        self.navigateToChildHome()
+                    }
+                }
+            }
+    }
+    
+    private func stopFirebaseListener() {
+        firebaseListener?.remove()
+        firebaseListener = nil
+    }
+    
     private func formatTime(_ seconds: Int) -> String {
         let minutes = seconds / 60
         let remainingSeconds = seconds % 60
         return String(format: "%02d:%02d", minutes, remainingSeconds)
     }
     
-    // DEMO DATA - START
     private func navigateToChildHome() {
-        // Mark pairing as completed for demo
+        // Mark pairing as completed
         authManager.markPairingCompleted()
+        
+        // Update device pairing status in Firebase
+        authManager.updateDevicePairingStatus(isPaired: true)
         
         // Complete onboarding for child
         authManager.completeOnboarding()
@@ -360,7 +396,6 @@ struct GenerateCodeView: View {
         // Navigate to child home
         NotificationCenter.default.post(name: .showChildHome, object: nil)
     }
-    // DEMO DATA - END
     
     // MARK: - Sign Out
     

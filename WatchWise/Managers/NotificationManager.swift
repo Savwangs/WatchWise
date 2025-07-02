@@ -87,7 +87,7 @@ class NotificationManager: ObservableObject {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
             if granted {
                 print("✅ Notification permissions granted")
-                DispatchQueue.main.async {
+            DispatchQueue.main.async {
                     UIApplication.shared.registerForRemoteNotifications()
                 }
             } else {
@@ -150,9 +150,9 @@ class NotificationManager: ObservableObject {
                         timestamp: timestamp,
                         isRead: isRead
                     )
-                }
-                
-                DispatchQueue.main.async {
+        }
+        
+        DispatchQueue.main.async {
                     self.notifications = newNotifications
                     self.unreadCount = newNotifications.filter { !$0.isRead }.count
                     print("📱 Updated notifications: \(newNotifications.count) total, \(self.unreadCount) unread")

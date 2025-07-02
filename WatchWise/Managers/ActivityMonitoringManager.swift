@@ -10,6 +10,7 @@ import FirebaseFirestore
 import FirebaseAuth
 import FirebaseFunctions
 import UIKit
+import BackgroundTasks
 
 @MainActor
 class ActivityMonitoringManager: ObservableObject {
@@ -18,11 +19,13 @@ class ActivityMonitoringManager: ObservableObject {
     @Published var isMonitoring = false
     @Published var lastActivityTime: Date?
     @Published var activityStatus: ActivityStatus = .unknown
+    @Published var missedHeartbeats: Int = 0
     
     private let firebaseManager = FirebaseManager.shared
     private let functions = Functions.functions()
-    private var activityTimer: Timer?
+    private var heartbeatTimer: Timer?
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    private var isChildUser: Bool = false
     
     enum ActivityStatus {
         case active
@@ -55,6 +58,38 @@ class ActivityMonitoringManager: ObservableObject {
     private init() {
         setupActivityMonitoring()
         setupAppLifecycleObservers()
+        checkUserType()
+    }
+    
+    // MARK: - User Type Detection
+    
+    private func checkUserType() {
+        // Check if current user is a child
+        if let userType = UserDefaults.standard.string(forKey: "userType") {
+            isChildUser = (userType == "Child")
+        } else if let currentUser = Auth.auth().currentUser {
+            // Fallback: check Firebase for user type
+            Task {
+                await loadUserTypeFromFirebase(userId: currentUser.uid)
+            }
+        }
+    }
+    
+    private func loadUserTypeFromFirebase(userId: String) async {
+        do {
+            let userDoc = try await firebaseManager.usersCollection.document(userId).getDocument()
+            if let data = userDoc.data(),
+               let userType = data["userType"] as? String {
+                await MainActor.run {
+                    self.isChildUser = (userType == "Child")
+                    if self.isChildUser {
+                        self.startHeartbeatMonitoring()
+                    }
+                }
+            }
+        } catch {
+            print("❌ Error loading user type: \(error)")
+        }
     }
     
     // MARK: - Activity Monitoring Setup
@@ -102,33 +137,216 @@ class ActivityMonitoringManager: ObservableObject {
         )
     }
     
-    // MARK: - Activity Tracking
+    // MARK: - Heartbeat System (Child Devices Only)
+    
+    func startHeartbeatMonitoring() {
+        guard isChildUser else {
+            print("📱 Not a child user - skipping heartbeat monitoring")
+            return
+        }
+        
+        print("💓 Starting heartbeat monitoring for child device")
+        stopHeartbeatMonitoring()
+        
+        // Send initial heartbeat
+        Task {
+            await sendHeartbeat()
+        }
+        
+        // Start timer for heartbeats (30 seconds for testing, change back to 900 for production)
+        let heartbeatInterval: TimeInterval = 30 // 30 seconds for testing, 900 for production
+        heartbeatTimer = Timer.scheduledTimer(withTimeInterval: heartbeatInterval, repeats: true) { [weak self] _ in
+            Task {
+                await self?.sendHeartbeat()
+            }
+        }
+        
+        isMonitoring = true
+        
+        // Register background task for heartbeat monitoring
+        registerBackgroundTask()
+    }
+    
+    func stopHeartbeatMonitoring() {
+        print("💓 Stopping heartbeat monitoring")
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
+        isMonitoring = false
+        endBackgroundTask()
+    }
+    
+    func sendHeartbeat() async {
+        guard isChildUser else { return }
+        
+        print("💓 Sending heartbeat...")
+        await sendHeartbeatAsync()
+    }
+    
+    private func sendHeartbeatAsync() async {
+        guard let currentUser = Auth.auth().currentUser else {
+            print("❌ No authenticated user for heartbeat")
+            return
+        }
+        
+        print("💓 Starting heartbeat process for user: \(currentUser.uid)")
+        
+        do {
+            let deviceInfo = getDeviceInfo()
+            print("📱 Device info prepared: \(deviceInfo)")
+            
+            // Call Cloud Function to update heartbeat
+            let data: [String: Any] = [
+                "deviceInfo": deviceInfo,
+                "activityType": "heartbeat",
+                "timestamp": Timestamp()
+            ]
+            
+            print("📤 Calling cloud function with data: \(data)")
+            let result = try await functions.httpsCallable("updateDeviceActivity").call(data)
+            print("📥 Cloud function response received: \(result.data ?? "nil")")
+            
+            if let resultData = result.data as? [String: Any] {
+                print("📊 Result data: \(resultData)")
+                
+                if let success = resultData["success"] as? Bool {
+                    if success {
+                        print("✅ Heartbeat sent successfully")
+                        
+                        await MainActor.run {
+                            self.lastActivityTime = Date()
+                            self.missedHeartbeats = 0
+                            self.updateActivityStatus()
+                        }
+                    } else {
+                        print("❌ Cloud function returned success: false")
+                        if let error = resultData["error"] as? String {
+                            print("❌ Cloud function error: \(error)")
+                        }
+                        await handleMissedHeartbeat()
+                    }
+                } else {
+                    print("❌ No success field in response")
+                    await handleMissedHeartbeat()
+                }
+            } else {
+                print("❌ Invalid response format from cloud function")
+                await handleMissedHeartbeat()
+            }
+            
+        } catch {
+            print("❌ Error sending heartbeat: \(error)")
+            print("❌ Error details: \(error.localizedDescription)")
+            await handleMissedHeartbeat()
+        }
+    }
+    
+    private func handleMissedHeartbeat() async {
+        await MainActor.run {
+            missedHeartbeats += 1
+        }
+        
+        // Send notification to parent about missed heartbeat
+        await notifyParentOfMissedHeartbeat()
+    }
+    
+    private func notifyParentOfMissedHeartbeat() async {
+        guard let currentUser = Auth.auth().currentUser else { return }
+        
+        do {
+            // Find parent-child relationship
+            let relationshipsQuery = firebaseManager.parentChildRelationshipsCollection
+                .whereField("childUserId", isEqualTo: currentUser.uid)
+                .whereField("isActive", isEqualTo: true)
+            
+            let snapshot = try await relationshipsQuery.getDocuments()
+            
+            if let relationship = snapshot.documents.first {
+                let relationshipData = relationship.data()
+                let parentUserId = relationshipData["parentUserId"] as? String ?? ""
+                let childName = relationshipData["childName"] as? String ?? "Child"
+                
+                // Determine notification message based on missed heartbeats
+                let (title, message) = getMissedHeartbeatMessage(missedHeartbeats: missedHeartbeats, childName: childName)
+                
+                // Create notification for parent
+                try await firebaseManager.db.collection("notifications").addDocument(data: [
+                    "parentUserId": parentUserId,
+                    "childUserId": currentUser.uid,
+                    "childName": childName,
+                    "type": "missed_heartbeat",
+                    "title": title,
+                    "message": message,
+                    "missedHeartbeats": missedHeartbeats,
+                    "timestamp": Timestamp(),
+                    "isRead": false
+                ])
+                
+                print("📧 Sent missed heartbeat notification to parent: \(title)")
+            }
+            
+        } catch {
+            print("❌ Error sending missed heartbeat notification: \(error)")
+        }
+    }
+    
+    private func getMissedHeartbeatMessage(missedHeartbeats: Int, childName: String) -> (String, String) {
+        switch missedHeartbeats {
+        case 1:
+            return (
+                "First Heartbeat Missed",
+                "\(childName)'s device missed its first heartbeat. This could indicate the app was closed or the device is having connectivity issues."
+            )
+        case 2:
+            return (
+                "Second Heartbeat Missed",
+                "\(childName)'s device has missed 2 consecutive heartbeats. The app may have been deleted or the device is turned off."
+            )
+        case 3, 4:
+            return (
+                "Multiple Heartbeats Missed",
+                "\(childName)'s device has missed \(missedHeartbeats) consecutive heartbeats. Please check if the WatchWise app is still installed and running."
+            )
+        default:
+            return (
+                "Extended Heartbeat Failure",
+                "\(childName)'s device has been offline for over 5 hours. The WatchWise app may have been deleted or the device is experiencing issues."
+            )
+        }
+    }
+    
+    // MARK: - Activity Tracking (Legacy - for non-child users)
     
     @objc private func appDidBecomeActive() {
-        print("📱 App became active - recording activity")
-        recordActivity(type: "app_opened")
-        startActivityTimer()
+        print("📱 App became active")
+        if !isChildUser {
+            recordActivity(type: "app_opened")
+        }
     }
     
     @objc private func appDidEnterBackground() {
-        print("📱 App entered background - recording activity")
-        recordActivity(type: "app_backgrounded")
-        stopActivityTimer()
+        print("📱 App entered background")
+        if !isChildUser {
+            recordActivity(type: "app_backgrounded")
+        }
     }
     
     @objc private func appWillTerminate() {
-        print("📱 App will terminate - recording activity")
-        recordActivity(type: "app_closed")
-        stopActivityTimer()
+        print("📱 App will terminate")
+        if !isChildUser {
+            recordActivity(type: "app_closed")
+        }
+        stopHeartbeatMonitoring()
     }
     
     @objc private func appStateChanged() {
         updateActivityStatus()
     }
     
-    // MARK: - Activity Recording
+    // MARK: - Legacy Activity Recording (for non-child users)
     
     func recordActivity(type: String) {
+        guard !isChildUser else { return } // Child users use heartbeat system
+        
         Task {
             await recordActivityAsync(type: type)
         }
@@ -210,25 +428,6 @@ class ActivityMonitoringManager: ObservableObject {
         }
     }
     
-    // MARK: - Activity Timer
-    
-    private func startActivityTimer() {
-        stopActivityTimer()
-        
-        // Update activity every 2 minutes while app is active (more frequent for better online status)
-        activityTimer = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
-            self?.recordActivity(type: "app_active")
-        }
-        
-        isMonitoring = true
-    }
-    
-    private func stopActivityTimer() {
-        activityTimer?.invalidate()
-        activityTimer = nil
-        isMonitoring = false
-    }
-    
     // MARK: - Activity Status
     
     private func updateActivityStatus() {
@@ -238,9 +437,9 @@ class ActivityMonitoringManager: ObservableObject {
         }
         
         let timeSinceLastActivity = Date().timeIntervalSince(lastActivity)
-        let fiveMinutes: TimeInterval = 300
+        let threshold: TimeInterval = isChildUser ? 1800 : 300 // 30 min for child, 5 min for others
         
-        if timeSinceLastActivity < fiveMinutes {
+        if timeSinceLastActivity < threshold {
             activityStatus = .active
         } else {
             activityStatus = .inactive
@@ -268,80 +467,15 @@ class ActivityMonitoringManager: ObservableObject {
         ]
     }
     
-    // MARK: - Inactivity Monitoring
-    
-    func checkForInactivity() async -> Bool {
-        guard let currentUser = Auth.auth().currentUser else { return false }
-        
-        do {
-            let userDoc = try await firebaseManager.usersCollection.document(currentUser.uid).getDocument()
-            
-            guard let data = userDoc.data(),
-                  let lastActiveAt = data["lastActiveAt"] as? Timestamp else {
-                return false
-            }
-            
-            let threeDaysAgo = Date().addingTimeInterval(-3 * 24 * 60 * 60)
-            let isInactive = lastActiveAt.dateValue() < threeDaysAgo
-            
-            if isInactive {
-                print("⚠️ User has been inactive for more than 3 days")
-                await sendInactivityNotification()
-            }
-            
-            return isInactive
-            
-        } catch {
-            print("❌ Error checking inactivity: \(error)")
-            return false
-        }
-    }
-    
-    private func sendInactivityNotification() async {
-        guard let currentUser = Auth.auth().currentUser else { return }
-        
-        do {
-            // Find parent-child relationship
-            let relationshipsQuery = firebaseManager.parentChildRelationshipsCollection
-                .whereField("childUserId", isEqualTo: currentUser.uid)
-                .whereField("isActive", isEqualTo: true)
-            
-            let snapshot = try await relationshipsQuery.getDocuments()
-            
-            if let relationship = snapshot.documents.first {
-                let relationshipData = relationship.data()
-                let parentUserId = relationshipData["parentUserId"] as? String ?? ""
-                let childName = relationshipData["childName"] as? String ?? "Child"
-                
-                // Create notification for parent
-                try await firebaseManager.db.collection("notifications").addDocument(data: [
-                    "parentUserId": parentUserId,
-                    "childUserId": currentUser.uid,
-                    "childName": childName,
-                    "type": "inactivity_alert",
-                    "title": "Child Device Inactive",
-                    "message": "\(childName) hasn't opened WatchWise in 3 days. Please check on their device.",
-                    "timestamp": Timestamp(),
-                    "isRead": false
-                ])
-                
-                print("📧 Sent inactivity notification to parent")
-            }
-            
-        } catch {
-            print("❌ Error sending inactivity notification: \(error)")
-        }
-    }
-    
     // MARK: - Background Task Management
     
-    func startBackgroundTask() {
+    private func registerBackgroundTask() {
         backgroundTask = UIApplication.shared.beginBackgroundTask { [weak self] in
             self?.endBackgroundTask()
         }
     }
     
-    func endBackgroundTask() {
+    private func endBackgroundTask() {
         if backgroundTask != .invalid {
             UIApplication.shared.endBackgroundTask(backgroundTask)
             backgroundTask = .invalid
@@ -351,16 +485,41 @@ class ActivityMonitoringManager: ObservableObject {
     // MARK: - Public Methods
     
     func startMonitoring() {
-        print("🔄 Starting activity monitoring")
-        recordActivity(type: "monitoring_started")
-        startActivityTimer()
+        print("📱 Starting activity monitoring")
+        
+        // Force refresh user type from Firebase
+        if let currentUser = Auth.auth().currentUser {
+            Task {
+                await loadUserTypeFromFirebase(userId: currentUser.uid)
+                
+                await MainActor.run {
+                    if self.isChildUser {
+                        self.startHeartbeatMonitoring()
+                    } else {
+                        print("📱 Starting activity monitoring for non-child user")
+                        self.recordActivity(type: "monitoring_started")
+                    }
+                }
+            }
+        } else {
+            // Fallback to local check
+            checkUserType()
+            if isChildUser {
+                startHeartbeatMonitoring()
+            } else {
+                print("📱 Starting activity monitoring for non-child user")
+                recordActivity(type: "monitoring_started")
+            }
+        }
     }
     
     func stopMonitoring() {
-        print("🛑 Stopping activity monitoring")
-        recordActivity(type: "monitoring_stopped")
-        stopActivityTimer()
-        endBackgroundTask()
+        if isChildUser {
+            stopHeartbeatMonitoring()
+        } else {
+            print("📱 Stopping activity monitoring")
+            recordActivity(type: "monitoring_stopped")
+        }
     }
     
     func getActivitySummary() async -> [String: Any]? {
@@ -415,7 +574,7 @@ class ActivityMonitoringManager: ObservableObject {
     deinit {
         NotificationCenter.default.removeObserver(self)
         Task { @MainActor in
-            stopActivityTimer()
+            stopHeartbeatMonitoring()
             endBackgroundTask()
         }
     }
