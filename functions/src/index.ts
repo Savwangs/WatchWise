@@ -109,57 +109,27 @@ export const updateDeviceActivity = functions.https.onCall(async (data, context)
     
     console.log(`📱 Updating device activity for user: ${userId}, type: ${activityType}`);
     
-    // Update user's last activity
-    await db.collection('users').doc(userId).update({
-      lastActiveAt: admin.firestore.Timestamp.now(),
-      deviceInfo: deviceInfo || null,
-      lastActivityType: activityType || 'app_opened'
-    });
-    
-    // If this is a heartbeat from a child device, update parent-child relationships
-    if (activityType === 'heartbeat') {
-      const relationshipsQuery = db.collection('parentChildRelationships')
-        .where('childUserId', '==', userId)
-        .where('isActive', '==', true);
-      
-      const relationshipsSnapshot = await relationshipsQuery.get();
-      
-      if (!relationshipsSnapshot.empty) {
-        const batch = db.batch();
+    // Handle different activity types
+    switch (activityType) {
+      case 'app_shutdown':
+        // App is closing gracefully - mark as normal closure
+        await handleAppShutdown(userId, deviceInfo);
+        break;
         
-        relationshipsSnapshot.docs.forEach((doc) => {
-          batch.update(doc.ref, {
-            lastSyncAt: admin.firestore.Timestamp.now(),
-            childDeviceInfo: deviceInfo || null,
-            lastHeartbeatAt: admin.firestore.Timestamp.now(),
-            missedHeartbeats: 0 // Reset missed heartbeats on successful heartbeat
-          });
-        });
+      case 'app_background':
+        // App is going to background - update normally
+        await handleAppBackground(userId, deviceInfo);
+        break;
         
-        await batch.commit();
-        console.log(`✅ Updated ${relationshipsSnapshot.size} parent-child relationships with heartbeat`);
-      }
-    } else {
-      // For non-heartbeat activities, update relationships normally
-      const relationshipsQuery = db.collection('parentChildRelationships')
-        .where('childUserId', '==', userId)
-        .where('isActive', '==', true);
-      
-      const relationshipsSnapshot = await relationshipsQuery.get();
-      
-      if (!relationshipsSnapshot.empty) {
-        const batch = db.batch();
+      case 'heartbeat':
+        // Normal heartbeat - update relationships
+        await handleHeartbeat(userId, deviceInfo);
+        break;
         
-        relationshipsSnapshot.docs.forEach((doc) => {
-          batch.update(doc.ref, {
-            lastSyncAt: admin.firestore.Timestamp.now(),
-            childDeviceInfo: deviceInfo || null
-          });
-        });
-        
-        await batch.commit();
-        console.log(`✅ Updated ${relationshipsSnapshot.size} parent-child relationships`);
-      }
+      default:
+        // Other activities - update normally
+        await handleNormalActivity(userId, deviceInfo, activityType);
+        break;
     }
     
     return { success: true };
@@ -168,6 +138,144 @@ export const updateDeviceActivity = functions.https.onCall(async (data, context)
     throw new functions.https.HttpsError('internal', 'Failed to update device activity');
   }
 });
+
+// Handle graceful app shutdown
+async function handleAppShutdown(userId: string, deviceInfo: any) {
+  console.log(`🔄 Handling app shutdown for user: ${userId}`);
+  
+  // Update user's last activity
+  await db.collection('users').doc(userId).update({
+    lastActiveAt: admin.firestore.Timestamp.now(),
+    deviceInfo: deviceInfo || null,
+    lastActivityType: 'app_shutdown',
+    lastGracefulShutdown: admin.firestore.Timestamp.now()
+  });
+  
+  // Update parent-child relationships
+  const relationshipsQuery = db.collection('parentChildRelationships')
+    .where('childUserId', '==', userId)
+    .where('isActive', '==', true);
+  
+  const relationshipsSnapshot = await relationshipsQuery.get();
+  
+  if (!relationshipsSnapshot.empty) {
+    const batch = db.batch();
+    
+    relationshipsSnapshot.docs.forEach((doc) => {
+      batch.update(doc.ref, {
+        lastSyncAt: admin.firestore.Timestamp.now(),
+        childDeviceInfo: deviceInfo || null,
+        lastGracefulShutdown: admin.firestore.Timestamp.now(),
+        missedHeartbeats: 0, // Reset missed heartbeats
+        isNormalClosure: true
+      });
+    });
+    
+    await batch.commit();
+    console.log(`✅ Updated ${relationshipsSnapshot.size} parent-child relationships with graceful shutdown`);
+  }
+}
+
+// Handle app background
+async function handleAppBackground(userId: string, deviceInfo: any) {
+  console.log(`🔄 Handling app background for user: ${userId}`);
+  
+  // Update user's last activity
+  await db.collection('users').doc(userId).update({
+    lastActiveAt: admin.firestore.Timestamp.now(),
+    deviceInfo: deviceInfo || null,
+    lastActivityType: 'app_background'
+  });
+  
+  // Update parent-child relationships
+  const relationshipsQuery = db.collection('parentChildRelationships')
+    .where('childUserId', '==', userId)
+    .where('isActive', '==', true);
+  
+  const relationshipsSnapshot = await relationshipsQuery.get();
+  
+  if (!relationshipsSnapshot.empty) {
+    const batch = db.batch();
+    
+    relationshipsSnapshot.docs.forEach((doc) => {
+      batch.update(doc.ref, {
+        lastSyncAt: admin.firestore.Timestamp.now(),
+        childDeviceInfo: deviceInfo || null
+      });
+    });
+    
+    await batch.commit();
+    console.log(`✅ Updated ${relationshipsSnapshot.size} parent-child relationships with background state`);
+  }
+}
+
+// Handle heartbeat
+async function handleHeartbeat(userId: string, deviceInfo: any) {
+  console.log(`💓 Handling heartbeat for user: ${userId}`);
+  
+  // Update user's last activity
+  await db.collection('users').doc(userId).update({
+    lastActiveAt: admin.firestore.Timestamp.now(),
+    deviceInfo: deviceInfo || null,
+    lastActivityType: 'heartbeat'
+  });
+  
+  // Update parent-child relationships
+  const relationshipsQuery = db.collection('parentChildRelationships')
+    .where('childUserId', '==', userId)
+    .where('isActive', '==', true);
+  
+  const relationshipsSnapshot = await relationshipsQuery.get();
+  
+  if (!relationshipsSnapshot.empty) {
+    const batch = db.batch();
+    
+    relationshipsSnapshot.docs.forEach((doc) => {
+      batch.update(doc.ref, {
+        lastSyncAt: admin.firestore.Timestamp.now(),
+        childDeviceInfo: deviceInfo || null,
+        lastHeartbeatAt: admin.firestore.Timestamp.now(),
+        missedHeartbeats: 0 // Reset missed heartbeats on successful heartbeat
+      });
+    });
+    
+    await batch.commit();
+    console.log(`✅ Updated ${relationshipsSnapshot.size} parent-child relationships with heartbeat`);
+  }
+}
+
+// Handle normal activity
+async function handleNormalActivity(userId: string, deviceInfo: any, activityType: string) {
+  console.log(`📱 Handling normal activity for user: ${userId}, type: ${activityType}`);
+  
+  // Update user's last activity
+  await db.collection('users').doc(userId).update({
+    lastActiveAt: admin.firestore.Timestamp.now(),
+    deviceInfo: deviceInfo || null,
+    lastActivityType: activityType || 'app_opened'
+  });
+  
+  // Update parent-child relationships
+  const relationshipsQuery = db.collection('parentChildRelationships')
+    .where('childUserId', '==', userId)
+    .where('isActive', '==', true);
+  
+  const relationshipsSnapshot = await relationshipsQuery.get();
+  
+  if (!relationshipsSnapshot.empty) {
+    const batch = db.batch();
+    
+    relationshipsSnapshot.docs.forEach((doc) => {
+      batch.update(doc.ref, {
+        lastSyncAt: admin.firestore.Timestamp.now(),
+        childDeviceInfo: deviceInfo || null
+      });
+    });
+    
+    await batch.commit();
+    console.log(`✅ Updated ${relationshipsSnapshot.size} parent-child relationships`);
+  }
+}
 
 // Cloud Function to check for inactive children and notify parents
 export const checkInactiveChildren = functions.pubsub
