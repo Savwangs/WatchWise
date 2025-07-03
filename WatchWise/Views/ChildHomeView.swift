@@ -23,6 +23,17 @@ struct ChildHomeView: View {
                     // Welcome Header
                     VStack(spacing: 8) {
                         Text(authManager.isNewSignUp ? "Connection Successful!" : "Welcome back, \(authManager.currentUser?.name ?? "Child")!")
+                            .onAppear {
+                                // Debug logging to help identify the issue
+                                if let user = authManager.currentUser {
+                                    print("🔍 User data loaded:")
+                                    print("   - ID: \(user.id)")
+                                    print("   - Email: \(user.email)")
+                                    print("   - Name: \(user.name ?? "nil") (type: \(type(of: user.name)))")
+                                    print("   - Device Name: \(user.deviceName ?? "nil") (type: \(type(of: user.deviceName)))")
+                                    print("   - User Type: \(user.userType ?? "nil")")
+                                }
+                            }
                             .font(.title)
                             .fontWeight(.bold)
                             .padding(.top, 20)
@@ -35,21 +46,6 @@ struct ChildHomeView: View {
                     // Messages List
                     ScrollView {
                         VStack(spacing: 12) {
-                            // DEMO DATA - START (Remove in production)
-                            MessageRow(
-                                message: "Great job keeping your screen time low today! 👏",
-                                timestamp: "2 hours ago",
-                                isFromParent: true
-                            )
-                            
-                            MessageRow(
-                                message: "Don't forget to take breaks between study sessions",
-                                timestamp: "Yesterday",
-                                isFromParent: true
-                            )
-                            // DEMO DATA - END (Remove in production)
-                            
-                            /* PRODUCTION CODE - Uncomment when ready for production
                             ForEach(messagesManager.messages, id: \.id) { message in
                                 MessageRow(
                                     message: message.content,
@@ -57,7 +53,6 @@ struct ChildHomeView: View {
                                     isFromParent: message.isFromParent
                                 )
                             }
-                            */
                         }
                         .padding(.horizontal, 20)
                     }
@@ -81,14 +76,14 @@ struct ChildHomeView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(authManager.currentUser?.deviceName ?? "This Device")
                                     .font(.body)
-                                Text("Connected to Parent Device")
+                                Text(authManager.currentUser?.isDevicePaired == true ? "Connected to Parent Device" : "Not Connected to Parent")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
                             Spacer()
                             
                             Circle()
-                                .fill(Color.green)
+                                .fill(authManager.currentUser?.isDevicePaired == true ? Color.green : Color.gray)
                                 .frame(width: 8, height: 8)
                         }
                         .padding(.vertical, 8)
@@ -163,6 +158,12 @@ struct ChildHomeView: View {
                             Image(systemName: "person.circle.fill")
                                 .foregroundColor(.gray)
                             Text(authManager.currentUser?.name ?? "Child User")
+                            .onAppear {
+                                // Additional safety check
+                                if let name = authManager.currentUser?.name {
+                                    print("🔍 Displaying user name: '\(name)' (type: \(type(of: name)))")
+                                }
+                            }
                         }
                         
                         Button(action: {
@@ -320,17 +321,46 @@ struct ChildHomeView: View {
             Text("Screen Time monitoring requires Family Controls permission to track app usage and help your parent monitor your device usage.")
         }
         .onAppear {
-            // Start heartbeat monitoring for child device
-            activityManager.startMonitoring()
+            print("🔍 ChildHomeView appeared")
+            
+            // Add safety check for user data
+            if let user = authManager.currentUser {
+                print("🔍 User data in ChildHomeView:")
+                print("   - ID: \(user.id)")
+                print("   - Email: \(user.email)")
+                print("   - Name: \(user.name ?? "nil")")
+                print("   - User Type: \(user.userType ?? "nil")")
+                print("   - Onboarding: \(user.hasCompletedOnboarding)")
+                print("   - Device Paired: \(user.isDevicePaired)")
+            } else {
+                print("❌ No user data available in ChildHomeView")
+            }
+            
+            // Start heartbeat monitoring for child device with error handling
+            Task {
+                do {
+                    activityManager.startMonitoring()
+                } catch {
+                    print("🔥 Error starting activity monitoring: \(error)")
+                }
+            }
             
             // Check if screen time authorization is needed
             if !screenTimeDataManager.isAuthorized {
+                print("🔍 Screen time authorization needed")
                 showPermissionAlert = true
             } else if let deviceId = authManager.currentUser?.id {
                 // Start screen time monitoring if authorized
+                print("🔍 Starting screen time monitoring for device: \(deviceId)")
                 Task {
-                    await screenTimeDataManager.startScreenTimeMonitoring(for: deviceId)
+                    do {
+                        await screenTimeDataManager.startScreenTimeMonitoring(for: deviceId)
+                    } catch {
+                        print("🔥 Error starting screen time monitoring: \(error)")
+                    }
                 }
+            } else {
+                print("❌ No device ID available for screen time monitoring")
             }
         }
         .onChange(of: screenTimeDataManager.errorMessage) { errorMessage in

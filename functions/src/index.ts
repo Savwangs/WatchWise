@@ -503,4 +503,335 @@ function getMissedHeartbeatMessage(missedHeartbeats: number, childName: string):
         `${childName}'s device has been offline for over 5 hours. The WatchWise app may have been deleted or the device is experiencing issues.`
       ];
   }
+}
+
+// Cloud Function to process real-time screen time updates
+export const processScreenTimeUpdate = functions.firestore
+  .document('screenTimeData/{documentId}')
+  .onWrite(async (change, context) => {
+    try {
+      const documentId = context.params.documentId;
+      console.log(`🔄 Processing screen time update for document: ${documentId}`);
+      
+      if (!change.after.exists) {
+        console.log('Document deleted, skipping processing');
+        return null;
+      }
+      
+      const data = change.after.data();
+      const deviceId = data?.deviceId;
+      const isRealtime = data?.isRealtime;
+      
+      if (!deviceId || !isRealtime) {
+        console.log('Not a real-time update, skipping processing');
+        return null;
+      }
+      
+      // Update device activity
+      await updateDeviceActivityForScreenTime(deviceId, data);
+      
+      // Trigger notifications if needed
+      await checkAndTriggerNotifications(deviceId, data);
+      
+      // Update aggregations
+      await updateScreenTimeAggregations(deviceId, data);
+      
+      console.log(`✅ Screen time update processed successfully for device: ${deviceId}`);
+      
+      return null;
+    } catch (error) {
+      console.error('❌ Error processing screen time update:', error);
+      throw error;
+    }
+  });
+
+// Cloud Function to aggregate screen time data daily
+export const aggregateDailyScreenTime = functions.pubsub
+  .schedule('0 1 * * *') // Run at 1 AM daily
+  .onRun(async (context) => {
+    try {
+      console.log('🔄 Starting daily screen time aggregation...');
+      
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const startOfDay = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
+      const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
+      
+      // Get all screen time data from yesterday
+      const snapshot = await db.collection('screenTimeData')
+        .where('date', '>=', startOfDay)
+        .where('date', '<', endOfDay)
+        .get();
+      
+      if (snapshot.empty) {
+        console.log('✅ No screen time data found for yesterday');
+        return null;
+      }
+      
+      console.log(`📊 Processing ${snapshot.size} screen time documents`);
+      
+      // Group by device
+      const deviceData: { [deviceId: string]: any[] } = {};
+      
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const deviceId = data.deviceId;
+        
+        if (!deviceData[deviceId]) {
+          deviceData[deviceId] = [];
+        }
+        deviceData[deviceId].push(data);
+      });
+      
+      // Process each device's data
+      for (const [deviceId, documents] of Object.entries(deviceData)) {
+        await aggregateDeviceScreenTime(deviceId, documents, startOfDay);
+      }
+      
+      console.log(`✅ Daily aggregation completed for ${Object.keys(deviceData).length} devices`);
+      
+      return null;
+    } catch (error) {
+      console.error('❌ Error in daily screen time aggregation:', error);
+      throw error;
+    }
+  });
+
+// Cloud Function to clean up old screen time data
+export const cleanupOldScreenTimeData = functions.pubsub
+  .schedule('0 3 * * 0') // Run at 3 AM every Sunday
+  .onRun(async (context) => {
+    try {
+      console.log('🔄 Starting cleanup of old screen time data...');
+      
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      // Delete old screen time data
+      const screenTimeSnapshot = await db.collection('screenTimeData')
+        .where('date', '<', thirtyDaysAgo)
+        .limit(500) // Process in batches
+        .get();
+      
+      if (!screenTimeSnapshot.empty) {
+        const batch = db.batch();
+        screenTimeSnapshot.docs.forEach(doc => {
+          batch.delete(doc.ref);
+        });
+        await batch.commit();
+        console.log(`🗑️ Deleted ${screenTimeSnapshot.size} old screen time documents`);
+      }
+      
+      // Delete old app usage data
+      const appUsageSnapshot = await db.collection('appUsageData')
+        .where('timestamp', '<', thirtyDaysAgo)
+        .limit(500)
+        .get();
+      
+      if (!appUsageSnapshot.empty) {
+        const batch = db.batch();
+        appUsageSnapshot.docs.forEach(doc => {
+          batch.delete(doc.ref);
+        });
+        await batch.commit();
+        console.log(`🗑️ Deleted ${appUsageSnapshot.size} old app usage documents`);
+      }
+      
+      console.log('✅ Cleanup completed successfully');
+      
+      return null;
+    } catch (error) {
+      console.error('❌ Error in cleanup:', error);
+      throw error;
+    }
+  });
+
+// Helper function to update device activity
+async function updateDeviceActivityForScreenTime(deviceId: string, screenTimeData: any) {
+  const activityData = {
+    deviceId: deviceId,
+    lastScreenTimeUpdate: admin.firestore.Timestamp.now(),
+    totalScreenTime: screenTimeData.totalScreenTime || 0,
+    appCount: screenTimeData.appUsages?.length || 0,
+    isActive: true
+  };
+  
+  await db.collection('deviceActivity').doc(deviceId).set(activityData, { merge: true });
+  console.log(`📱 Updated device activity for ${deviceId}`);
+}
+
+// Helper function to check and trigger notifications
+async function checkAndTriggerNotifications(deviceId: string, screenTimeData: any) {
+  try {
+    // Get device settings and limits
+    const deviceDoc = await db.collection('childDevices').doc(deviceId).get();
+    if (!deviceDoc.exists) return;
+    
+    const deviceData = deviceDoc.data();
+    const parentId = deviceData?.parentId;
+    
+    if (!parentId) return;
+    
+    const totalScreenTime = screenTimeData.totalScreenTime || 0;
+    const dailyLimit = deviceData?.dailyScreenTimeLimit || 4 * 60 * 60; // 4 hours default
+    
+    // Check if daily limit is exceeded
+    if (totalScreenTime > dailyLimit) {
+      const notificationData = {
+        parentId: parentId,
+        deviceId: deviceId,
+        type: 'screen_time_limit_exceeded',
+        title: 'Daily Screen Time Limit Exceeded',
+        message: `Your child has exceeded the daily screen time limit of ${Math.round(dailyLimit / 3600)} hours.`,
+        timestamp: admin.firestore.Timestamp.now(),
+        isRead: false,
+        data: {
+          currentScreenTime: totalScreenTime,
+          dailyLimit: dailyLimit
+        }
+      };
+      
+      await db.collection('notifications').add(notificationData);
+      console.log(`🔔 Sent screen time limit notification for device ${deviceId}`);
+    }
+    
+    // Check for excessive app usage
+    const appUsages = screenTimeData.appUsages || [];
+    for (const appUsage of appUsages) {
+      const appLimit = deviceData?.appLimits?.[appUsage.bundleIdentifier];
+      if (appLimit && appUsage.duration > appLimit * 3600) { // Convert hours to seconds
+        const notificationData = {
+          parentId: parentId,
+          deviceId: deviceId,
+          type: 'app_limit_exceeded',
+          title: 'App Usage Limit Exceeded',
+          message: `Your child has exceeded the time limit for ${appUsage.appName}.`,
+          timestamp: admin.firestore.Timestamp.now(),
+          isRead: false,
+          data: {
+            appName: appUsage.appName,
+            currentUsage: appUsage.duration,
+            appLimit: appLimit
+          }
+        };
+        
+        await db.collection('notifications').add(notificationData);
+        console.log(`🔔 Sent app limit notification for ${appUsage.appName}`);
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ Error checking notifications:', error);
+  }
+}
+
+// Helper function to update screen time aggregations
+async function updateScreenTimeAggregations(deviceId: string, screenTimeData: any) {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const aggregationRef = db.collection('screenTimeAggregations').doc(`${deviceId}_${today.toISOString().split('T')[0]}`);
+    
+    const currentData = await aggregationRef.get();
+    let aggregation: any = currentData.exists ? currentData.data() : {
+      deviceId: deviceId,
+      date: today,
+      totalScreenTime: 0,
+      appUsageTotals: {},
+      hourlyBreakdown: {},
+      lastUpdated: admin.firestore.Timestamp.now()
+    };
+    
+    // Ensure aggregation object exists
+    if (!aggregation) {
+      aggregation = {
+        deviceId: deviceId,
+        date: today,
+        totalScreenTime: 0,
+        appUsageTotals: {},
+        hourlyBreakdown: {},
+        lastUpdated: admin.firestore.Timestamp.now()
+      };
+    }
+    
+    // Update totals
+    aggregation.totalScreenTime = (aggregation.totalScreenTime || 0) + (screenTimeData.totalScreenTime || 0);
+    aggregation.lastUpdated = admin.firestore.Timestamp.now();
+    
+    // Update app usage totals
+    const appUsages = screenTimeData.appUsages || [];
+    for (const appUsage of appUsages) {
+      const appName = appUsage.appName;
+      if (!aggregation.appUsageTotals) {
+        aggregation.appUsageTotals = {};
+      }
+      aggregation.appUsageTotals[appName] = (aggregation.appUsageTotals[appName] || 0) + appUsage.duration;
+    }
+    
+    // Update hourly breakdown
+    const hourlyBreakdown = screenTimeData.hourlyBreakdown || {};
+    for (const [hour, duration] of Object.entries(hourlyBreakdown)) {
+      const hourKey = hour.toString();
+      if (!aggregation.hourlyBreakdown) {
+        aggregation.hourlyBreakdown = {};
+      }
+      const durationValue = typeof duration === 'number' ? duration : 0;
+      aggregation.hourlyBreakdown[hourKey] = (aggregation.hourlyBreakdown[hourKey] || 0) + durationValue;
+    }
+    
+    await aggregationRef.set(aggregation);
+    console.log(`📊 Updated aggregations for device ${deviceId}`);
+    
+  } catch (error) {
+    console.error('❌ Error updating aggregations:', error);
+  }
+}
+
+// Helper function to aggregate device screen time
+async function aggregateDeviceScreenTime(deviceId: string, documents: any[], date: Date) {
+  try {
+    let totalScreenTime = 0;
+    const appUsageTotals: { [appName: string]: number } = {};
+    const hourlyBreakdown: { [hour: string]: number } = {};
+    
+    // Aggregate data from all documents
+    for (const doc of documents) {
+      totalScreenTime += doc.totalScreenTime || 0;
+      
+      // Aggregate app usage
+      const appUsages = doc.appUsages || [];
+      for (const appUsage of appUsages) {
+        const appName = appUsage.appName;
+        appUsageTotals[appName] = (appUsageTotals[appName] || 0) + appUsage.duration;
+      }
+      
+      // Aggregate hourly breakdown
+      const hourly = doc.hourlyBreakdown || {};
+      for (const [hour, duration] of Object.entries(hourly)) {
+        const hourKey = hour.toString();
+        const durationValue = typeof duration === 'number' ? duration : 0;
+        hourlyBreakdown[hourKey] = (hourlyBreakdown[hourKey] || 0) + durationValue;
+      }
+    }
+    
+    // Save daily aggregation
+    const aggregationData = {
+      deviceId: deviceId,
+      date: date,
+      totalScreenTime: totalScreenTime,
+      appUsageTotals: appUsageTotals,
+      hourlyBreakdown: hourlyBreakdown,
+      documentCount: documents.length,
+      aggregatedAt: admin.firestore.Timestamp.now()
+    };
+    
+    const dateKey = date.toISOString().split('T')[0];
+    await db.collection('screenTimeAggregations').doc(`${deviceId}_${dateKey}`).set(aggregationData);
+    
+    console.log(`📊 Aggregated data for device ${deviceId} on ${dateKey}`);
+    
+  } catch (error) {
+    console.error(`❌ Error aggregating data for device ${deviceId}:`, error);
+  }
 } 

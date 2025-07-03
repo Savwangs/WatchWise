@@ -123,8 +123,11 @@ struct ContentView: View {
         }
         .environmentObject(authManager)
         .onReceive(NotificationCenter.default.publisher(for: .showChildHome)) { _ in
-            // Force refresh of the view to trigger navigation
+            print("🔍 Received showChildHome notification")
+            
+            // Add safety check before forcing refresh
             DispatchQueue.main.async {
+                print("🔍 Forcing view refresh for child home navigation")
                 forceRefresh.toggle()
             }
         }

@@ -280,7 +280,8 @@ class ScreenTimeMonitoringManager: ObservableObject {
                 appName: name,
                 bundleIdentifier: bundleId,
                 duration: duration,
-                timestamp: timestamp
+                timestamp: timestamp,
+                usageRanges: nil
             )
             
             appUsages.append(usage)

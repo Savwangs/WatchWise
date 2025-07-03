@@ -45,7 +45,7 @@ struct DeviceManagementView: View {
                         .progressViewStyle(CircularProgressViewStyle())
                     Spacer()
                 } else if pairingManager.pairedChildren.isEmpty {
-                    EmptyStateView()
+                    EmptyStateView(showingAddDevice: $showingAddDevice)
                 } else {
                     // Device list
                     ScrollView {
@@ -437,6 +437,8 @@ struct SearchBar: View {
 }
 
 struct EmptyStateView: View {
+    @Binding var showingAddDevice: Bool
+    
     var body: some View {
         VStack(spacing: 20) {
             Image(systemName: "iphone.radiowaves.left.and.right")
@@ -457,7 +459,7 @@ struct EmptyStateView: View {
             }
             
             Button(action: {
-                // This will be handled by the parent view
+                showingAddDevice = true
             }) {
                 HStack {
                     Image(systemName: "plus.circle.fill")

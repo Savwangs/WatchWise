@@ -19,9 +19,52 @@ struct AppUsage: Identifiable, Codable {
     let bundleIdentifier: String
     let duration: TimeInterval
     let timestamp: Date
+    let usageRanges: [AppUsageRange]? // New: exact time ranges
     
     enum CodingKeys: String, CodingKey {
-        case appName, bundleIdentifier, duration, timestamp
+        case appName, bundleIdentifier, duration, timestamp, usageRanges
+    }
+    
+    var formattedDuration: String {
+        let hours = Int(duration) / 3600
+        let minutes = Int(duration) % 3600 / 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+    
+    var formattedUsageRanges: String {
+        guard let ranges = usageRanges, !ranges.isEmpty else {
+            return "No time data"
+        }
+        
+        return ranges.map { range in
+            let startTime = range.startTime.formatted(date: .omitted, time: .shortened)
+            let endTime = range.endTime.formatted(date: .omitted, time: .shortened)
+            return "\(startTime) - \(endTime)"
+        }.joined(separator: ", ")
+    }
+}
+
+// New: Structure for exact time ranges
+struct AppUsageRange: Identifiable, Codable {
+    let id = UUID()
+    let startTime: Date
+    let endTime: Date
+    let duration: TimeInterval
+    let sessionId: String
+    
+    enum CodingKeys: String, CodingKey {
+        case startTime, endTime, duration, sessionId
+    }
+    
+    var formattedRange: String {
+        let start = startTime.formatted(date: .omitted, time: .shortened)
+        let end = endTime.formatted(date: .omitted, time: .shortened)
+        return "\(start) - \(end)"
     }
 }
 
@@ -229,109 +272,9 @@ struct DeviceInfo: Codable {
     }
 }
 
-// MARK: - DEMO DATA - START (Remove in production)
-extension ScreenTimeData {
-    static var demoData: ScreenTimeData {
-        let demoApps = [
-            AppUsage(
-                appName: "Instagram",
-                bundleIdentifier: "com.burbn.instagram",
-                duration: 4500, // 1h 15m
-                timestamp: Date().addingTimeInterval(-3600)
-            ),
-            AppUsage(
-                appName: "TikTok",
-                bundleIdentifier: "com.zhiliaoapp.musically",
-                duration: 2700, // 45m
-                timestamp: Date().addingTimeInterval(-7200)
-            ),
-            AppUsage(
-                appName: "YouTube",
-                bundleIdentifier: "com.google.ios.youtube",
-                duration: 3600, // 1h
-                timestamp: Date().addingTimeInterval(-5400)
-            ),
-            AppUsage(
-                appName: "Safari",
-                bundleIdentifier: "com.apple.mobilesafari",
-                duration: 1200, // 20m
-                timestamp: Date().addingTimeInterval(-1800)
-            ),
-            AppUsage(
-                appName: "Snapchat",
-                bundleIdentifier: "com.toyopagroup.picaboo",
-                duration: 1800, // 30m
-                timestamp: Date().addingTimeInterval(-900)
-            ),
-            AppUsage(
-                appName: "Messages",
-                bundleIdentifier: "com.apple.MobileSMS",
-                duration: 900, // 15m
-                timestamp: Date().addingTimeInterval(-600)
-            )
-        ]
-        
-        // DEMO DATA - Accurate hourly breakdown that matches total (Remove in production)
-        let hourlyData: [Int: TimeInterval] = [
-            8: 900,   // 8 AM - 15 minutes (Messages)
-            9: 1800,  // 9 AM - 30 minutes (Snapchat)
-            10: 1200, // 10 AM - 20 minutes (Safari)
-            12: 2700, // 12 PM - 45 minutes (TikTok)
-            14: 4500, // 2 PM - 1h 15m (Instagram)
-            16: 3600, // 4 PM - 1 hour (YouTube)
-        ] // Total: 14700 seconds = 4h 5m
-        // DEMO DATA - END
-        
-        return ScreenTimeData(
-            id: "demo-screen-time-data",
-            deviceId: "demo-device-id",
-            date: Date(),
-            totalScreenTime: demoApps.reduce(0) { $0 + $1.duration }, // This equals 14700
-            appUsages: demoApps,
-            hourlyBreakdown: hourlyData
-        )
-    }
-}
 
-// MARK: - DEMO DATA - App Limits Extension (Remove in production)
-extension AlertSettings {
-    static var demoSettings: AlertSettings {
-        return AlertSettings(
-            isEnabled: true,
-            alertTimes: ["12:00", "18:00"],
-            enabledCategories: ["Social Networking", "Games", "Entertainment"],
-            appLimits: [
-                "com.burbn.instagram": 2.0, // 2h limit (current: 1h 15m)
-                "com.zhiliaoapp.musically": 1.0, // 1h limit (current: 45m)
-                "com.google.ios.youtube": 1.5, // 1.5h limit (current: 1h)
-                "com.apple.mobilesafari": 0.5, // 30m limit (current: 20m)
-                "com.toyopagroup.picaboo": 1.0, // 1h limit (current: 30m)
-                "com.apple.MobileSMS": 0.5 // 30m limit (current: 15m)
-            ],
-            bedtimeSettings: BedtimeSettings(
-                isEnabled: true,
-                startTime: "22:00", // 10:00 PM
-                endTime: "05:00",   // 5:00 AM
-                enabledDays: [1, 2, 3, 4, 5, 6, 7] // All days
-            ),
-            disabledApps: []
-        )
-    }
-}
-// MARK: - END DEMO DATA
-extension ChildDevice {
-    static var demoDevice: ChildDevice {
-        return ChildDevice(
-            id: "demo-device-id",
-            childName: "Savir",
-            deviceName: "Savir's iPhone",
-            pairCode: "123456",
-            parentId: "demo-parent-id",
-            pairedAt: Timestamp(date: Date().addingTimeInterval(-86400)), // Paired yesterday
-            isActive: true
-        )
-    }
-}
+
+
 
 // MARK: - App Monitoring Models
 

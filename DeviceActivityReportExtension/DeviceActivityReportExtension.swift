@@ -15,6 +15,15 @@ struct DeviceActivityReportMain: DeviceActivityReportExtension {
         TotalActivityReport { totalActivity in
             TotalActivityView(totalActivity: totalActivity)
         }
-        // Add more reports here...
+        
+        // App usage monitoring report
+        AppUsageReport { appUsage in
+            TotalActivityView(totalActivity: appUsage)
+        }
+        
+        // New app detection report
+        NewAppDetectionReport { newApps in
+            TotalActivityView(totalActivity: newApps)
+        }
     }
 }

@@ -173,15 +173,42 @@ class PairingManager: ObservableObject {
                 return .failure(error)
             }
             
-            guard let childUserId = data["childUserId"] as? String,
-                  let childName = data["childName"] as? String,
-                  let deviceName = data["deviceName"] as? String else {
-                print("❌ Invalid document data structure")
+            // Safely extract childUserId
+            guard let childUserId = data["childUserId"] as? String else {
+                print("❌ Invalid childUserId in document data")
                 print("❌ Available fields: \(data.keys)")
                 isLoading = false
                 let error = PairingError.invalidData
                 errorMessage = error.localizedDescription
                 return .failure(error)
+            }
+            
+            // Safely extract childName with type conversion
+            let childName: String
+            if let nameData = data["childName"] {
+                if let stringName = nameData as? String {
+                    childName = stringName
+                } else if let numberName = nameData as? NSNumber {
+                    childName = numberName.stringValue
+                } else {
+                    childName = String(describing: nameData)
+                }
+            } else {
+                childName = "Child"
+            }
+            
+            // Safely extract deviceName with type conversion
+            let deviceName: String
+            if let deviceNameData = data["deviceName"] {
+                if let stringDeviceName = deviceNameData as? String {
+                    deviceName = stringDeviceName
+                } else if let numberDeviceName = deviceNameData as? NSNumber {
+                    deviceName = numberDeviceName.stringValue
+                } else {
+                    deviceName = String(describing: deviceNameData)
+                }
+            } else {
+                deviceName = "Device"
             }
             
             print("✅ Extracted data - Child: \(childName), Device: \(deviceName), ChildUserID: \(childUserId)")
@@ -386,12 +413,20 @@ class PairingManager: ObservableObject {
     /// Gets current device information
     private func getDeviceInfo() -> [String: Any] {
         let device = UIDevice.current
+        
+        // Ensure all string values are actually strings
+        let deviceName = String(describing: device.name)
+        let deviceModel = String(describing: device.model)
+        let systemName = String(describing: device.systemName)
+        let systemVersion = String(describing: device.systemVersion)
+        let identifierForVendor = device.identifierForVendor?.uuidString ?? ""
+        
         return [
-            "name": device.name,
-            "model": device.model,
-            "systemName": device.systemName,
-            "systemVersion": device.systemVersion,
-            "identifierForVendor": device.identifierForVendor?.uuidString ?? "",
+            "name": deviceName,
+            "model": deviceModel,
+            "systemName": systemName,
+            "systemVersion": systemVersion,
+            "identifierForVendor": identifierForVendor,
             "timestamp": Timestamp()
         ]
     }
@@ -788,14 +823,15 @@ struct PairedChildDevice: Identifiable {
     let missedHeartbeats: Int
     
     var isOnline: Bool {
-        // Check if last heartbeat was within 20 minutes (allowing for some delay)
+        // Check if last heartbeat was within 30 minutes (allowing for background monitoring)
         if let lastHeartbeat = lastHeartbeatAt {
-            let twentyMinutesAgo = Date().addingTimeInterval(-1200) // 20 minutes
-            return lastHeartbeat.dateValue() > twentyMinutesAgo
+            let thirtyMinutesAgo = Date().addingTimeInterval(-1800) // 30 minutes
+            return lastHeartbeat.dateValue() > thirtyMinutesAgo
         } else {
-            // Fallback to old method if no heartbeat data
-            let thirtyMinutesAgo = Date().addingTimeInterval(-1800)
-            return lastSyncAt.dateValue() > thirtyMinutesAgo
+            // Fallback to lastSyncAt if no heartbeat data
+            // For simulator testing, use a shorter time window
+            let tenMinutesAgo = Date().addingTimeInterval(-600) // 10 minutes for testing
+            return lastSyncAt.dateValue() > tenMinutesAgo
         }
     }
     
@@ -814,6 +850,24 @@ struct PairedChildDevice: Identifiable {
             }
         } else {
             return "Offline"
+        }
+    }
+    
+    var detailedStatus: String {
+        if isOnline {
+            return "Device is online and being monitored"
+        } else if let lastHeartbeat = lastHeartbeatAt {
+            let timeSinceHeartbeat = Date().timeIntervalSince(lastHeartbeat.dateValue())
+            
+            if timeSinceHeartbeat > 3600 { // More than 1 hour
+                return "App may have been deleted - check device"
+            } else if timeSinceHeartbeat > 1800 { // More than 30 minutes
+                return "App may be closed or deleted"
+            } else {
+                return "App temporarily offline"
+            }
+        } else {
+            return "No heartbeat data available"
         }
     }
 }

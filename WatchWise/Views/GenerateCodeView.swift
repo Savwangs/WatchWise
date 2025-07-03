@@ -260,8 +260,11 @@ struct GenerateCodeView: View {
     }
     
     private var canProceed: Bool {
-        !childName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !deviceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // Add safety checks to ensure we're working with strings
+        let safeChildName = String(describing: childName).trimmingCharacters(in: .whitespacesAndNewlines)
+        let safeDeviceName = String(describing: deviceName).trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        return !safeChildName.isEmpty && !safeDeviceName.isEmpty
     }
     
     private func proceedToCodeGeneration() {
@@ -276,10 +279,18 @@ struct GenerateCodeView: View {
         }
         
         Task {
+            // Ensure we're working with strings
+            let safeChildName = String(describing: childName).trimmingCharacters(in: .whitespacesAndNewlines)
+            let safeDeviceName = String(describing: deviceName).trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            print("🔍 Generating pairing code with:")
+            print("   - Child Name: '\(safeChildName)' (type: \(type(of: safeChildName)))")
+            print("   - Device Name: '\(safeDeviceName)' (type: \(type(of: safeDeviceName)))")
+            
             let result = await pairingManager.generatePairingCode(
                 childUserId: currentUser.uid,
-                childName: childName.trimmingCharacters(in: .whitespacesAndNewlines),
-                deviceName: deviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+                childName: safeChildName,
+                deviceName: safeDeviceName
             )
             
             await MainActor.run {
@@ -341,11 +352,9 @@ struct GenerateCodeView: View {
         
         // Check every 2 seconds if pairing is completed
         pairingCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
-            // Check both demo data and real Firebase pairing status
-            let isPaired = UserDefaults.standard.bool(forKey: "demoChildPaired_\(code)")
             let isFirebasePaired = self.authManager.currentUser?.isDevicePaired ?? false
             
-            if isPaired || isFirebasePaired {
+            if isFirebasePaired {
                 self.stopPairingCheckTimer()
                 self.navigateToChildHome()
             }
@@ -389,6 +398,21 @@ struct GenerateCodeView: View {
     }
     
     private func navigateToChildHome() {
+        print("🔍 Navigating to child home...")
+        
+        // Add safety checks before navigation
+        guard let currentUser = authManager.currentUser else {
+            print("❌ No current user available for navigation")
+            return
+        }
+        
+        print("🔍 Current user before navigation:")
+        print("   - ID: \(currentUser.id)")
+        print("   - Email: \(currentUser.email)")
+        print("   - User Type: \(currentUser.userType ?? "nil")")
+        print("   - Onboarding: \(currentUser.hasCompletedOnboarding)")
+        print("   - Device Paired: \(currentUser.isDevicePaired)")
+        
         // Mark pairing as completed
         authManager.markPairingCompleted()
         
@@ -399,6 +423,7 @@ struct GenerateCodeView: View {
         authManager.completeOnboarding()
         
         // Navigate to child home
+        print("🔍 Posting showChildHome notification")
         NotificationCenter.default.post(name: .showChildHome, object: nil)
     }
     

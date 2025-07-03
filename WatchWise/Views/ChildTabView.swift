@@ -80,12 +80,7 @@ struct ChildHomeContentView: View {
                             devicePairCode = code
                         },
                         onPermissionRequested: {
-                            // DEMO DATA - START (Skip permission screen and go directly to child home)
-                            currentView = .pairedConfirmation
-                            isPaired = true
-                            authManager.completeOnboarding()
-                            // DEMO DATA - END
-
+                            currentView = .permissionRequest
                         }
                     )
                     
@@ -113,12 +108,10 @@ struct ChildHomeContentView: View {
             }
         }
         .onChange(of: authManager.hasCompletedOnboarding) { completed in
-            // DEMO DATA - START (Listen for onboarding completion and navigate to child home)
             if completed {
                 isPaired = true
                 currentView = .pairedConfirmation
             }
-            // DEMO DATA - END
         }
     }
 }
@@ -179,13 +172,13 @@ struct ChildSettingsView: View {
                         
                         HStack {
                             Image(systemName: "link.circle.fill")
-                                .foregroundColor(authManager.hasCompletedOnboarding ? .green : .orange)
+                                .foregroundColor(authManager.currentUser?.isDevicePaired == true ? .green : .orange)
                                 .font(.title2)
                             
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(authManager.hasCompletedOnboarding ? "Connected to Parent" : "Not Connected")
+                                Text(authManager.currentUser?.isDevicePaired == true ? "Connected to Parent" : "Not Connected")
                                     .font(.body)
-                                Text(authManager.hasCompletedOnboarding ? "Your parent can see your screen time" : "Complete setup to connect")
+                                Text(authManager.currentUser?.isDevicePaired == true ? "Your parent can see your screen time" : "Complete setup to connect")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }

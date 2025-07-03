@@ -76,6 +76,22 @@ class FirebaseManager: ObservableObject {
         return db.collection("newAppDetections")
     }
     
+    var appUsageCollection: CollectionReference {
+        return db.collection("appUsageData")
+    }
+    
+    var screenTimeAggregationsCollection: CollectionReference {
+        return db.collection("screenTimeAggregations")
+    }
+    
+    var deviceActivityCollection: CollectionReference {
+        return db.collection("deviceActivity")
+    }
+    
+    var realtimeUpdatesCollection: CollectionReference {
+        return db.collection("realtimeUpdates")
+    }
+    
     // MARK: - Legacy Collection References (for backward compatibility)
     
     var devicesCollection: CollectionReference {
@@ -138,6 +154,7 @@ class FirebaseManager: ObservableObject {
         case permissionDenied
         case quotaExceeded
         case unavailable
+        case encodingError
         
         var errorDescription: String? {
             switch self {
@@ -155,6 +172,8 @@ class FirebaseManager: ObservableObject {
                 return "Firebase quota exceeded"
             case .unavailable:
                 return "Firebase service unavailable"
+            case .encodingError:
+                return "Data encoding error"
             }
         }
     }
@@ -172,7 +191,11 @@ class FirebaseManager: ObservableObject {
             "screenTimeData": screenTimeCollection,
             "messages": messagesCollection,
             "settings": settingsCollection,
-            "newAppDetections": newAppDetectionsCollection
+            "newAppDetections": newAppDetectionsCollection,
+            "appUsageData": appUsageCollection,
+            "screenTimeAggregations": screenTimeAggregationsCollection,
+            "deviceActivity": deviceActivityCollection,
+            "realtimeUpdates": realtimeUpdatesCollection
         ]
         
         var results: [String: Bool] = [:]

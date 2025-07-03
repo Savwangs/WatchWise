@@ -81,17 +81,26 @@ class ActivityMonitoringManager: ObservableObject {
     private func loadUserTypeFromFirebase(userId: String) async {
         do {
             let userDoc = try await firebaseManager.usersCollection.document(userId).getDocument()
-            if let data = userDoc.data(),
-               let userType = data["userType"] as? String {
+            if let data = userDoc.data() {
+                // Safely extract userType with proper type checking
+                let userType = data["userType"] as? String ?? ""
+                
                 await MainActor.run {
                     self.isChildUser = (userType == "Child")
                     if self.isChildUser {
                         self.startHeartbeatMonitoring()
                     }
                 }
+                print("✅ User type loaded: \(userType)")
+            } else {
+                print("⚠️ No user data found for ID: \(userId)")
             }
         } catch {
             print("❌ Error loading user type: \(error)")
+            // Fallback to local check
+            await MainActor.run {
+                self.checkUserType()
+            }
         }
     }
     
@@ -210,14 +219,21 @@ class ActivityMonitoringManager: ObservableObject {
         
         do {
             var deviceInfo = getDeviceInfo()
-            // Ensure timestamp is a Double
-            if let ts = deviceInfo["timestamp"] as? Date {
-                deviceInfo["timestamp"] = ts.timeIntervalSince1970
-            } else if let ts = deviceInfo["timestamp"] as? String, let date = ISO8601DateFormatter().date(from: ts) {
-                deviceInfo["timestamp"] = date.timeIntervalSince1970
+            // Ensure timestamp is a Double (it should already be from getDeviceInfo)
+            if let timestamp = deviceInfo["timestamp"] {
+                // Verify it's a Double, if not, convert it
+                if timestamp is Double {
+                    // Already correct
+                } else if let date = timestamp as? Date {
+                    deviceInfo["timestamp"] = date.timeIntervalSince1970
+                } else if let string = timestamp as? String, let date = ISO8601DateFormatter().date(from: string) {
+                    deviceInfo["timestamp"] = date.timeIntervalSince1970
+                } else {
+                    // Fallback to current time
+                    deviceInfo["timestamp"] = Date().timeIntervalSince1970
+                }
             }
             print("📱 Device info prepared: \(deviceInfo)")
-            print("Type of timestamp in deviceInfo:", type(of: deviceInfo["timestamp"] ?? "nil"))
             
             // Call Cloud Function to update heartbeat
             let data: [String: Any] = [
@@ -225,7 +241,6 @@ class ActivityMonitoringManager: ObservableObject {
                 "activityType": "heartbeat",
                 "timestamp": deviceInfo["timestamp"] ?? Date().timeIntervalSince1970
             ]
-            print("Type of timestamp in data:", type(of: data["timestamp"] ?? "nil"))
             print("📤 Calling cloud function with data: \(data)")
             let result = try await functions.httpsCallable("updateDeviceActivity").call(data)
             print("📥 Cloud function response received: \(result.data ?? "nil")")
@@ -502,14 +517,21 @@ class ActivityMonitoringManager: ObservableObject {
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
         let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown"
         
+        // Ensure all string values are actually strings
+        let deviceModel = String(describing: device.model)
+        let systemName = String(describing: device.systemName)
+        let systemVersion = String(describing: device.systemVersion)
+        let deviceName = String(describing: device.name)
+        let identifierForVendor = device.identifierForVendor?.uuidString ?? ""
+        
         return [
-            "deviceModel": device.model,
-            "systemName": device.systemName,
-            "systemVersion": device.systemVersion,
+            "deviceModel": deviceModel,
+            "systemName": systemName,
+            "systemVersion": systemVersion,
             "appVersion": appVersion,
             "buildNumber": buildNumber,
-            "deviceName": device.name,
-            "identifierForVendor": device.identifierForVendor?.uuidString ?? "",
+            "deviceName": deviceName,
+            "identifierForVendor": identifierForVendor,
             "batteryLevel": device.batteryLevel,
             "batteryState": device.batteryState.rawValue,
             // Always use Double for timestamp
@@ -603,30 +625,35 @@ class ActivityMonitoringManager: ObservableObject {
             print("⚠️ Background refresh not available - skipping background task scheduling")
             return
         }
-        let request = BGProcessingTaskRequest(identifier: "com.watchwise.heartbeat")
-        request.requiresNetworkConnectivity = true
-        request.requiresExternalPower = false
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 60) // Schedule for 1 minute from now
+        
+        // Schedule multiple background tasks for redundancy
+        let heartbeatRequest = BGProcessingTaskRequest(identifier: "com.watchwise.heartbeat")
+        heartbeatRequest.requiresNetworkConnectivity = true
+        heartbeatRequest.requiresExternalPower = false
+        heartbeatRequest.earliestBeginDate = Date(timeIntervalSinceNow: 60) // Schedule for 1 minute from now
+        
+        let monitoringRequest = BGProcessingTaskRequest(identifier: "com.watchwise.monitoring")
+        monitoringRequest.requiresNetworkConnectivity = true
+        monitoringRequest.requiresExternalPower = false
+        monitoringRequest.earliestBeginDate = Date(timeIntervalSinceNow: 300) // Schedule for 5 minutes from now
         
         do {
-            try BGTaskScheduler.shared.submit(request)
-            print("✅ Background heartbeat task scheduled for: \(Date(timeIntervalSinceNow: 60))")
-            print("📅 Current time: \(Date())")
-            print("⏰ Task will run in: 60 seconds")
+            try BGTaskScheduler.shared.submit(heartbeatRequest)
+            try BGTaskScheduler.shared.submit(monitoringRequest)
+            print("✅ Background tasks scheduled:")
+            print("   - Heartbeat task: \(Date(timeIntervalSinceNow: 60))")
+            print("   - Monitoring task: \(Date(timeIntervalSinceNow: 300))")
         } catch {
-            print("❌ Failed to schedule background heartbeat: \(error)")
-            print("🔍 Error details: \(error.localizedDescription)")
+            print("❌ Failed to schedule background tasks: \(error)")
         }
     }
     
     func handleBackgroundHeartbeat(task: BGProcessingTask) {
         print("🔄 Background heartbeat task started at: \(Date())")
-        print("📱 App state: \(UIApplication.shared.applicationState.rawValue)")
-        print("🔋 Battery level: \(UIDevice.current.batteryLevel)")
         
         // Set up task expiration handler
         task.expirationHandler = {
-            print("⏰ Background heartbeat task expired at: \(Date())")
+            print("⏰ Background heartbeat task expired")
             task.setTaskCompleted(success: false)
         }
         
@@ -637,21 +664,58 @@ class ActivityMonitoringManager: ObservableObject {
                 await sendHeartbeat()
                 
                 // Schedule next background heartbeat
-                print("📅 Scheduling next background heartbeat...")
                 scheduleBackgroundHeartbeat()
                 
-                // Mark task as completed
                 task.setTaskCompleted(success: true)
-                print("✅ Background heartbeat completed successfully at: \(Date())")
+                print("✅ Background heartbeat completed successfully")
                 
             } catch {
                 print("❌ Background heartbeat failed: \(error)")
-                print("🔍 Error details: \(error.localizedDescription)")
                 task.setTaskCompleted(success: false)
             }
         }
     }
     
+    func handleBackgroundMonitoring(task: BGProcessingTask) {
+        print("🔄 Background monitoring task started at: \(Date())")
+        
+        task.expirationHandler = {
+            print("⏰ Background monitoring task expired")
+            task.setTaskCompleted(success: false)
+        }
+        
+        Task {
+            do {
+                // Check if app is still installed
+                let isInstalled = isAppInstalled()
+                print("📱 App installation check: \(isInstalled)")
+                
+                if isInstalled {
+                    // App is still installed, send heartbeat
+                    await sendHeartbeat()
+                    
+                    // Schedule next monitoring task
+                    let nextRequest = BGProcessingTaskRequest(identifier: "com.watchwise.monitoring")
+                    nextRequest.requiresNetworkConnectivity = true
+                    nextRequest.requiresExternalPower = false
+                    nextRequest.earliestBeginDate = Date(timeIntervalSinceNow: 300) // 5 minutes
+                    
+                    try BGTaskScheduler.shared.submit(nextRequest)
+                    print("✅ Next monitoring task scheduled")
+                } else {
+                    // App has been deleted - notify parent
+                    print("🚨 App deletion detected in background monitoring")
+                    await notifyParentOfAppDeletion()
+                }
+                
+                task.setTaskCompleted(success: true)
+                
+            } catch {
+                print("❌ Background monitoring failed: \(error)")
+                task.setTaskCompleted(success: false)
+            }
+        }
+    }
     
     // MARK: - Background Task Management
     
@@ -688,29 +752,48 @@ class ActivityMonitoringManager: ObservableObject {
     func startMonitoring() {
         print("📱 Starting activity monitoring")
         
-        // Force refresh user type from Firebase
-        if let currentUser = Auth.auth().currentUser {
-            Task {
-                await loadUserTypeFromFirebase(userId: currentUser.uid)
-                
-                await MainActor.run {
-                    if self.isChildUser {
-                        self.startHeartbeatMonitoring()
-                    } else {
-                        print("📱 Starting activity monitoring for non-child user")
-                        self.recordActivity(type: "monitoring_started")
+        // Add error handling to prevent crashes
+        do {
+            // Force refresh user type from Firebase
+            if let currentUser = Auth.auth().currentUser {
+                Task {
+                    do {
+                        await loadUserTypeFromFirebase(userId: currentUser.uid)
+                        
+                        await MainActor.run {
+                            if self.isChildUser {
+                                self.startHeartbeatMonitoring()
+                            } else {
+                                print("📱 Starting activity monitoring for non-child user")
+                                self.recordActivity(type: "monitoring_started")
+                            }
+                        }
+                    } catch {
+                        print("❌ Error in startMonitoring task: \(error)")
+                        // Fallback to local check
+                        await MainActor.run {
+                            self.checkUserType()
+                            if self.isChildUser {
+                                self.startHeartbeatMonitoring()
+                            } else {
+                                print("📱 Starting activity monitoring for non-child user")
+                                self.recordActivity(type: "monitoring_started")
+                            }
+                        }
                     }
                 }
-            }
-        } else {
-            // Fallback to local check
-            checkUserType()
-            if isChildUser {
-                startHeartbeatMonitoring()
             } else {
-                print("📱 Starting activity monitoring for non-child user")
-                recordActivity(type: "monitoring_started")
+                // Fallback to local check
+                checkUserType()
+                if isChildUser {
+                    startHeartbeatMonitoring()
+                } else {
+                    print("📱 Starting activity monitoring for non-child user")
+                    recordActivity(type: "monitoring_started")
+                }
             }
+        } catch {
+            print("❌ Error starting monitoring: \(error)")
         }
     }
     

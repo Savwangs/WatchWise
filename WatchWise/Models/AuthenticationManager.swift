@@ -332,8 +332,34 @@ class AuthenticationManager: ObservableObject {
                 }
                 
                 let userType = data["userType"] as? String
-                let name = data["name"] as? String
-                let deviceName = data["deviceName"] as? String
+                
+                // Safely extract name with type conversion
+                let name: String?
+                if let nameData = data["name"] {
+                    if let stringName = nameData as? String {
+                        name = stringName
+                    } else if let numberName = nameData as? NSNumber {
+                        name = numberName.stringValue
+                    } else {
+                        name = nil
+                    }
+                } else {
+                    name = nil
+                }
+                
+                // Safely extract deviceName with type conversion
+                let deviceName: String?
+                if let deviceNameData = data["deviceName"] {
+                    if let stringDeviceName = deviceNameData as? String {
+                        deviceName = stringDeviceName
+                    } else if let numberDeviceName = deviceNameData as? NSNumber {
+                        deviceName = numberDeviceName.stringValue
+                    } else {
+                        deviceName = nil
+                    }
+                } else {
+                    deviceName = nil
+                }
                 
                 let appUser = AppUser(
                     id: userId,

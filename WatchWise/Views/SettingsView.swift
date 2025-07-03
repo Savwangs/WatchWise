@@ -539,13 +539,6 @@ struct SettingsView: View {
     private func saveAlertSettings() {
         guard let userId = authManager.currentUser?.id else { return }
         
-        // DEMO DATA - START (Remove in production)
-        // In demo mode, just simulate successful save without Firebase call
-        print("✅ Alert settings saved successfully (DEMO MODE)")
-        return
-        // DEMO DATA - END (Remove in production)
-        
-        /* PRODUCTION CODE - Uncomment when ready for production
         do {
             let encoder = JSONEncoder()
             let data = try encoder.encode(alertSettings)
@@ -567,7 +560,6 @@ struct SettingsView: View {
         } catch {
             showErrorMessage("Failed to encode alert settings")
         }
-        */
     }
     
     // MARK: - Error Handling
@@ -580,72 +572,14 @@ struct SettingsView: View {
     
     // MARK: - App Limits Helper Methods
     private func getTopAppsForLimits() -> [AppUsage] {
-        // DEMO DATA - START (Remove in production)
-        let demoApps = [
-            AppUsage(
-                appName: "Instagram",
-                bundleIdentifier: "com.burbn.instagram",
-                duration: 4500, // 1h 15m
-                timestamp: Date().addingTimeInterval(-3600)
-            ),
-            AppUsage(
-                appName: "TikTok",
-                bundleIdentifier: "com.zhiliaoapp.musically",
-                duration: 2700, // 45m
-                timestamp: Date().addingTimeInterval(-7200)
-            ),
-            AppUsage(
-                appName: "YouTube",
-                bundleIdentifier: "com.google.ios.youtube",
-                duration: 3600, // 1h
-                timestamp: Date().addingTimeInterval(-5400)
-            ),
-            AppUsage(
-                appName: "Safari",
-                bundleIdentifier: "com.apple.mobilesafari",
-                duration: 1200, // 20m
-                timestamp: Date().addingTimeInterval(-1800)
-            ),
-            AppUsage(
-                appName: "Snapchat",
-                bundleIdentifier: "com.toyopagroup.picaboo",
-                duration: 1800, // 30m
-                timestamp: Date().addingTimeInterval(-900)
-            ),
-            AppUsage(
-                appName: "Messages",
-                bundleIdentifier: "com.apple.MobileSMS",
-                duration: 900, // 15m
-                timestamp: Date().addingTimeInterval(-600)
-            )
-        ]
-        
-        // Filter out deleted apps
-        let filteredApps = demoApps.filter { app in
-            !deletedApps.contains(app.bundleIdentifier)
-        }
-        
-        return Array(filteredApps.prefix(6)) // Top 6 apps
-        // DEMO DATA - END (Remove in production)
-        
-        /* PRODUCTION CODE - Uncomment when ready for production
         // Get the top apps from current screen time data
         // This would come from your actual screen time data source
         return []
-        */
     }
 
     private func loadAlertSettingsWithDefaults() async {
         guard let userId = authManager.currentUser?.id else { return }
         
-        // DEMO DATA - START (Remove in production)
-        // In demo mode, just use demo settings directly
-        self.alertSettings = AlertSettings.demoSettings
-        print("✅ Loaded demo alert settings with bedtime: \(alertSettings.bedtimeSettings.startTime) - \(alertSettings.bedtimeSettings.endTime)")
-        return
-        // DEMO DATA - END (Remove in production)
-        
-        /* PRODUCTION CODE - Uncomment when ready for production
         await withCheckedContinuation { continuation in
             FirebaseManager.shared.usersCollection
                 .document(userId)
@@ -664,7 +598,6 @@ struct SettingsView: View {
                     }
                 }
         }
-        */
     }
     
     private func bindingForApp(_ bundleId: String) -> Binding<Double> {
@@ -730,7 +663,7 @@ struct SettingsView: View {
     }
     
     private func getAppName(for bundleId: String) -> String? {
-        // Get app name from demo data or actual data source
+                                // Get app name from actual data source
         let demoApps = [
             "com.burbn.instagram": "Instagram",
             "com.zhiliaoapp.musically": "TikTok",

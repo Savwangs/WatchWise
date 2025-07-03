@@ -87,13 +87,18 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     }
     
     private func configureBackgroundTasks() {
+        // Register heartbeat background task
         BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.watchwise.heartbeat", using: nil) { task in
-            // Handle background task by calling ActivityMonitoringManager
-            print("🔄 Background task received in AppDelegate")
-            
-            // Get the shared instance and handle the background heartbeat
+            print("🔄 Background heartbeat task received in AppDelegate")
             let activityManager = ActivityMonitoringManager.shared
             activityManager.handleBackgroundHeartbeat(task: task as! BGProcessingTask)
+        }
+        
+        // Register monitoring background task
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.watchwise.monitoring", using: nil) { task in
+            print("🔄 Background monitoring task received in AppDelegate")
+            let activityManager = ActivityMonitoringManager.shared
+            activityManager.handleBackgroundMonitoring(task: task as! BGProcessingTask)
         }
         
         print("✅ Background tasks configured in AppDelegate")

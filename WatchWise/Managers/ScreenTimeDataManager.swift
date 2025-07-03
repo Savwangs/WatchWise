@@ -237,59 +237,103 @@ class ScreenTimeDataManager: ObservableObject {
             return realAppUsages
         }
         
-        // Fallback to simulated data if no real data is available
-        print("⚠️ No real app usage data found, using simulated data")
-        
-        var appUsages: [AppUsage] = []
-        
-        // Get installed apps and their usage
-        let installedApps = await getInstalledApps()
-        
-        for app in installedApps {
-            // In a real implementation, you would get actual usage data from DeviceActivityReport
-            // For now, we'll simulate realistic usage patterns
-            let duration = TimeInterval.random(in: 300...7200) // 5 minutes to 2 hours
-            let timestamp = Date().addingTimeInterval(-TimeInterval.random(in: 0...86400)) // Within last 24 hours
-            
-            let usage = AppUsage(
-                appName: app.appName,
-                bundleIdentifier: app.bundleIdentifier,
-                duration: duration,
-                timestamp: timestamp
-            )
-            
-            appUsages.append(usage)
-        }
-        
-        // Sort by duration (most used first)
-        return appUsages.sorted { $0.duration > $1.duration }
+        // No real data available - return empty array instead of simulated data
+        print("⚠️ No real app usage data found - returning empty data")
+        return []
     }
     
     private func getRealAppUsageData() async -> [AppUsage] {
         var appUsages: [AppUsage] = []
         
         // Get app usage data stored by DeviceActivityReport extension
+        let userDefaults = UserDefaults(suiteName: "group.com.watchwise.screentime")
         let installedApps = await getInstalledApps()
         
-        for app in installedApps {
-            let key = "app_usage_\(app.bundleIdentifier)"
-            let duration = UserDefaults.standard.double(forKey: key)
+        // First try to get detailed app usage data
+        if let detailedData = userDefaults?.array(forKey: "detailed_app_usage_data") as? [[String: Any]] {
+            print("📊 Found \(detailedData.count) detailed app usage records from background")
             
-            if duration > 0 {
+            for usageData in detailedData {
+                guard let bundleId = usageData["bundleIdentifier"] as? String,
+                      let duration = usageData["duration"] as? TimeInterval,
+                      let timestamp = usageData["timestamp"] as? TimeInterval else {
+                    continue
+                }
+                
+                // Find app name from installed apps
+                let appName = installedApps.first { $0.bundleIdentifier == bundleId }?.appName ?? bundleId
+                
+                // Get usage ranges for this app
+                let usageRanges = await getUsageRangesForApp(bundleId: bundleId)
+                
                 let usage = AppUsage(
-                    appName: app.appName,
-                    bundleIdentifier: app.bundleIdentifier,
+                    appName: appName,
+                    bundleIdentifier: bundleId,
                     duration: duration,
-                    timestamp: Date()
+                    timestamp: Date(timeIntervalSince1970: timestamp),
+                    usageRanges: usageRanges
                 )
                 appUsages.append(usage)
+            }
+            
+            // Clear the detailed data after reading
+            userDefaults?.removeObject(forKey: "detailed_app_usage_data")
+        } else {
+            // Fallback to individual app usage data
+            for app in installedApps {
+                let key = "app_usage_\(app.bundleIdentifier)"
+                let duration = userDefaults?.double(forKey: key) ?? 0
                 
-                // Clear the stored duration after reading
-                UserDefaults.standard.removeObject(forKey: key)
+                if duration > 0 {
+                    let usage = AppUsage(
+                        appName: app.appName,
+                        bundleIdentifier: app.bundleIdentifier,
+                        duration: duration,
+                        timestamp: Date(),
+                        usageRanges: nil
+                    )
+                    appUsages.append(usage)
+                    
+                    // Clear the stored duration after reading
+                    userDefaults?.removeObject(forKey: key)
+                }
             }
         }
         
         return appUsages
+    }
+    
+    private func getUsageRangesForApp(bundleId: String) async -> [AppUsageRange]? {
+        let userDefaults = UserDefaults(suiteName: "group.com.watchwise.screentime")
+        
+        guard let appUsageRanges = userDefaults?.dictionary(forKey: "app_usage_ranges") as? [String: [[String: Any]]],
+              let rangesData = appUsageRanges[bundleId] else {
+            return nil
+        }
+        
+        var ranges: [AppUsageRange] = []
+        
+        for rangeData in rangesData {
+            guard let startTime = rangeData["startTime"] as? TimeInterval,
+                  let endTime = rangeData["endTime"] as? TimeInterval,
+                  let duration = rangeData["duration"] as? TimeInterval,
+                  let sessionId = rangeData["sessionId"] as? String else {
+                continue
+            }
+            
+            let range = AppUsageRange(
+                startTime: Date(timeIntervalSince1970: startTime),
+                endTime: Date(timeIntervalSince1970: endTime),
+                duration: duration,
+                sessionId: sessionId
+            )
+            ranges.append(range)
+        }
+        
+        // Clear the ranges after reading
+        userDefaults?.removeObject(forKey: "app_usage_ranges")
+        
+        return ranges.isEmpty ? nil : ranges
     }
     
     private func getHourlyBreakdown(from startDate: Date, to endDate: Date) async -> [Int: TimeInterval] {
@@ -303,40 +347,45 @@ class ScreenTimeDataManager: ObservableObject {
             return realHourlyData
         }
         
-        // Fallback to simulated data
-        print("⚠️ No real hourly data found, using simulated data")
-        
-        var breakdown: [Int: TimeInterval] = [:]
-        
-        // In production, this would aggregate actual usage data by hour
-        // For now, we'll simulate realistic hourly patterns
-        for hour in 0..<24 {
-            let usage = TimeInterval.random(in: 0...3600) // 0 to 1 hour per hour
-            if usage > 0 {
-                breakdown[hour] = usage
-            }
-        }
-        
-        return breakdown
+        // No real data available - return empty dictionary instead of simulated data
+        print("⚠️ No real hourly data found - returning empty data")
+        return [:]
     }
     
     private func getRealHourlyBreakdown() async -> [Int: TimeInterval] {
         var breakdown: [Int: TimeInterval] = [:]
         
-        // Get detailed app usage data stored by DeviceActivityReport extension
-        let installedApps = await getInstalledApps()
+        // Get hourly breakdown data stored by DeviceActivityReport extension
+        let userDefaults = UserDefaults(suiteName: "group.com.watchwise.screentime")
         
-        for app in installedApps {
-            let key = "detailed_app_usage_\(app.bundleIdentifier)"
-            let usageData = UserDefaults.standard.array(forKey: key) as? [[String: Any]] ?? []
+        if let hourlyData = userDefaults?.dictionary(forKey: "hourly_breakdown_data") as? [String: TimeInterval] {
+            print("📊 Found hourly breakdown data from background")
             
-            for usage in usageData {
-                if let duration = usage["duration"] as? TimeInterval,
-                   let timestamp = usage["timestamp"] as? TimeInterval {
-                    let date = Date(timeIntervalSince1970: timestamp)
-                    let hour = Calendar.current.component(.hour, from: date)
-                    
-                    breakdown[hour, default: 0] += duration
+            // Convert string keys to integers
+            for (hourString, duration) in hourlyData {
+                if let hour = Int(hourString) {
+                    breakdown[hour] = duration
+                }
+            }
+            
+            // Clear the data after reading
+            userDefaults?.removeObject(forKey: "hourly_breakdown_data")
+        } else {
+            // Fallback to detailed app usage data
+            let installedApps = await getInstalledApps()
+            
+            for app in installedApps {
+                let key = "detailed_app_usage_\(app.bundleIdentifier)"
+                let usageData = userDefaults?.array(forKey: key) as? [[String: Any]] ?? []
+                
+                for usage in usageData {
+                    if let duration = usage["duration"] as? TimeInterval,
+                       let timestamp = usage["timestamp"] as? TimeInterval {
+                        let date = Date(timeIntervalSince1970: timestamp)
+                        let hour = Calendar.current.component(.hour, from: date)
+                        
+                        breakdown[hour, default: 0] += duration
+                    }
                 }
             }
         }
@@ -384,14 +433,17 @@ class ScreenTimeDataManager: ObservableObject {
     
     private func getRealNewAppDetections() async -> [AppInfo] {
         // Get new app detections stored by DeviceActivityReport extension
-        let newAppBundleIds = UserDefaults.standard.array(forKey: "new_app_detections") as? [String] ?? []
+        let userDefaults = UserDefaults(suiteName: "group.com.watchwise.screentime")
+        let newAppBundleIds = userDefaults?.array(forKey: "new_app_detections") as? [String] ?? []
         
         if newAppBundleIds.isEmpty {
             return []
         }
         
+        print("🆕 Found \(newAppBundleIds.count) new app detections from background")
+        
         // Clear the detections after reading
-        UserDefaults.standard.removeObject(forKey: "new_app_detections")
+        userDefaults?.removeObject(forKey: "new_app_detections")
         
         // Convert bundle IDs to AppInfo objects
         let installedApps = await getInstalledApps()
@@ -429,6 +481,7 @@ class ScreenTimeDataManager: ObservableObject {
             let data: [String: Any] = [
                 "appName": detection.appName,
                 "bundleIdentifier": detection.bundleIdentifier,
+                "category": detection.category,
                 "detectedAt": Timestamp(date: detection.detectedAt),
                 "deviceId": detection.deviceId,
                 "isNotified": false
@@ -598,15 +651,60 @@ class ScreenTimeDataManager: ObservableObject {
                 guard let documents = snapshot?.documents,
                       let latestDoc = documents.first else { return }
                 
+                // Safely parse the data with proper type checking
                 do {
-                    let screenTimeData = try latestDoc.data(as: ScreenTimeData.self)
+                    let data = latestDoc.data()
+                    
+                    // Validate required fields with proper type checking
+                    guard let deviceId = data["deviceId"] as? String,
+                          let dateTimestamp = data["date"] as? Timestamp,
+                          let totalScreenTime = data["totalScreenTime"] as? TimeInterval else {
+                        print("🔥 Invalid data structure in real-time update")
+                        return
+                    }
+                    
+                    // Safely parse app usages
+                    let appUsagesData = data["appUsages"] as? [[String: Any]] ?? []
+                    let appUsages = appUsagesData.compactMap { usageData -> AppUsage? in
+                        guard let appName = usageData["appName"] as? String,
+                              let bundleId = usageData["bundleIdentifier"] as? String,
+                              let duration = usageData["duration"] as? TimeInterval,
+                              let timestamp = (usageData["timestamp"] as? Timestamp)?.dateValue() else {
+                            return nil
+                        }
+                        
+                        return AppUsage(
+                            appName: appName,
+                            bundleIdentifier: bundleId,
+                            duration: duration,
+                            timestamp: timestamp,
+                            usageRanges: nil
+                        )
+                    }
+                    
+                    // Safely parse hourly breakdown
+                    let hourlyBreakdown = data["hourlyBreakdown"] as? [String: TimeInterval] ?? [:]
+                    let hourlyBreakdownInt = Dictionary(uniqueKeysWithValues: hourlyBreakdown.compactMap { key, value in
+                        Int(key).map { ($0, value) }
+                    })
+                    
+                    let screenTimeData = ScreenTimeData(
+                        deviceId: deviceId,
+                        date: dateTimestamp.dateValue(),
+                        totalScreenTime: totalScreenTime,
+                        appUsages: appUsages,
+                        hourlyBreakdown: hourlyBreakdownInt
+                    )
+                    
                     Task { @MainActor in
                         self.currentScreenTimeData = screenTimeData
                     }
+                    
                 } catch {
                     Task { @MainActor in
                         self.errorMessage = "Failed to parse real-time data: \(error.localizedDescription)"
                     }
+                    print("🔥 Error parsing real-time data: \(error)")
                 }
             }
     }

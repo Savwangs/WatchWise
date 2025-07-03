@@ -215,9 +215,9 @@ struct MessagesView: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(customMessage.isEmpty || isLoading ? Color.gray : Color.blue)
+                                        .background((customMessage.isEmpty || String(describing: customMessage).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading) ? Color.gray : Color.blue)
                 .cornerRadius(12)
-                .disabled(customMessage.isEmpty || isLoading || selectedDevice == nil)
+                .disabled(customMessage.isEmpty || String(describing: customMessage).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading || selectedDevice == nil)
             }
             .padding(.horizontal)
         }
@@ -244,27 +244,6 @@ struct MessagesView: View {
     }
     
     private func loadPairedDevices() async {
-        
-        // === DEMO DATA START ===
-        // Creating mock paired device data for demo mode
-        let mockDevice = ChildDevice(
-            id: "demo-device-id",
-            childName: "Savir",
-            deviceName: "Savir's iPhone",
-            pairCode: "123456",
-            parentId: "demo-parent-id",
-            pairedAt: Timestamp(date: Date().addingTimeInterval(-86400)), // Paired yesterday
-            isActive: true
-        )
-            
-        await MainActor.run {
-            self.pairedDevices = [mockDevice]
-            if self.selectedDevice == nil {
-                self.selectedDevice = mockDevice
-            }
-        }
-        // === DEMO DATA END ===
-        /*
         guard let parentId = authManager.currentUser?.id else { return }
         
         do {
@@ -291,7 +270,6 @@ struct MessagesView: View {
                 showAlert = true
             }
         }
-        */
     }
     
     private func loadMessageHistory() async {
@@ -325,7 +303,10 @@ struct MessagesView: View {
             return
         }
         
-        guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        // Ensure we're working with a string
+        let safeMessageText = String(describing: messageText).trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        guard !safeMessageText.isEmpty else {
             alertMessage = "Please enter a message"
             showAlert = true
             return

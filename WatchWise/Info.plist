@@ -11,6 +11,7 @@
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.watchwise.heartbeat</string>
+		<string>com.watchwise.monitoring</string>
 		<string>com.watchwise.deviceactivity</string>
 	</array>
 	<key>NSUserActivityTypes</key>
