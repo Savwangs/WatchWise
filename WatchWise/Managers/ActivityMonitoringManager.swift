@@ -24,7 +24,6 @@ class ActivityMonitoringManager: ObservableObject {
     private let firebaseManager = FirebaseManager.shared
     private let functions = Functions.functions()
     private var heartbeatTimer: Timer?
-    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     private var isChildUser: Bool = false
     
     enum ActivityStatus {
@@ -58,7 +57,11 @@ class ActivityMonitoringManager: ObservableObject {
     private init() {
         setupActivityMonitoring()
         setupAppLifecycleObservers()
+        setupBackgroundTasks()
         checkUserType()
+        
+        // Enable battery monitoring for accurate battery level
+        UIDevice.current.isBatteryMonitoringEnabled = true
     }
     
     // MARK: - User Type Detection
@@ -136,6 +139,12 @@ class ActivityMonitoringManager: ObservableObject {
             object: nil
         )
     }
+
+    private func setupBackgroundTasks() {
+        // Background tasks are registered in AppDelegate
+        // This method is just for initialization
+        print("✅ Background task setup completed")
+    }
     
     // MARK: - Heartbeat System (Child Devices Only)
     
@@ -160,11 +169,11 @@ class ActivityMonitoringManager: ObservableObject {
                 await self?.sendHeartbeat()
             }
         }
+
+        // Schedule background heartbeat task
+        scheduleBackgroundHeartbeat()
         
         isMonitoring = true
-        
-        // Register background task for heartbeat monitoring
-        registerBackgroundTask()
     }
     
     func stopHeartbeatMonitoring() {
@@ -172,7 +181,6 @@ class ActivityMonitoringManager: ObservableObject {
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
         isMonitoring = false
-        endBackgroundTask()
     }
     
     func sendHeartbeat() async {
@@ -190,17 +198,34 @@ class ActivityMonitoringManager: ObservableObject {
         
         print("💓 Starting heartbeat process for user: \(currentUser.uid)")
         
+        // Register background task for this heartbeat
+        var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+        backgroundTask = UIApplication.shared.beginBackgroundTask { [weak self] in
+            self?.endBackgroundTask(backgroundTask)
+        }
+        
+        defer {
+            endBackgroundTask(backgroundTask)
+        }
+        
         do {
-            let deviceInfo = getDeviceInfo()
+            var deviceInfo = getDeviceInfo()
+            // Ensure timestamp is a Double
+            if let ts = deviceInfo["timestamp"] as? Date {
+                deviceInfo["timestamp"] = ts.timeIntervalSince1970
+            } else if let ts = deviceInfo["timestamp"] as? String, let date = ISO8601DateFormatter().date(from: ts) {
+                deviceInfo["timestamp"] = date.timeIntervalSince1970
+            }
             print("📱 Device info prepared: \(deviceInfo)")
+            print("Type of timestamp in deviceInfo:", type(of: deviceInfo["timestamp"] ?? "nil"))
             
             // Call Cloud Function to update heartbeat
             let data: [String: Any] = [
                 "deviceInfo": deviceInfo,
                 "activityType": "heartbeat",
-                "timestamp": Timestamp()
+                "timestamp": deviceInfo["timestamp"] ?? Date().timeIntervalSince1970
             ]
-            
+            print("Type of timestamp in data:", type(of: data["timestamp"] ?? "nil"))
             print("📤 Calling cloud function with data: \(data)")
             let result = try await functions.httpsCallable("updateDeviceActivity").call(data)
             print("📥 Cloud function response received: \(result.data ?? "nil")")
@@ -294,22 +319,27 @@ class ActivityMonitoringManager: ObservableObject {
         case 1:
             return (
                 "First Heartbeat Missed",
-                "\(childName)'s device missed its first heartbeat. This could indicate the app was closed or the device is having connectivity issues."
+                "\(childName)'s device missed its first heartbeat. The WatchWise app may have been closed or the device is having connectivity issues."
             )
         case 2:
             return (
                 "Second Heartbeat Missed",
                 "\(childName)'s device has missed 2 consecutive heartbeats. The app may have been deleted or the device is turned off."
             )
-        case 3, 4:
+        case 3:
             return (
-                "Multiple Heartbeats Missed",
-                "\(childName)'s device has missed \(missedHeartbeats) consecutive heartbeats. Please check if the WatchWise app is still installed and running."
+                "Third Heartbeat Missed",
+                "\(childName)'s device has missed 3 consecutive heartbeats. The WatchWise app has likely been deleted from the device."
+            )
+        case 4:
+            return (
+                "Fourth Heartbeat Missed",
+                "\(childName)'s device has missed 4 consecutive heartbeats. The WatchWise app has almost certainly been deleted."
             )
         default:
             return (
                 "Extended Heartbeat Failure",
-                "\(childName)'s device has been offline for over 5 hours. The WatchWise app may have been deleted or the device is experiencing issues."
+                "\(childName)'s device has been offline for an extended period. The WatchWise app has been deleted or the device is experiencing issues."
             )
         }
     }
@@ -328,12 +358,31 @@ class ActivityMonitoringManager: ObservableObject {
         if !isChildUser {
             recordActivity(type: "app_backgrounded")
         }
+        // Send background signal
+        Task {
+            await sendBackgroundSignal()
+        }
+
+        // Also send shutdown signal when going to background (more reliable)
+        // This helps catch cases where appWillTerminate isn't called
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            // If app is still in background after 1 second, send shutdown signal
+            if UIApplication.shared.applicationState == .background {
+                Task {
+                    await self.sendShutdownSignal()
+                }
+            }
+        }
     }
     
     @objc private func appWillTerminate() {
         print("📱 App will terminate")
         if !isChildUser {
             recordActivity(type: "app_closed")
+        }
+        // Send graceful shutdown signal
+        Task {
+            await sendShutdownSignal()
         }
         stopHeartbeatMonitoring()
     }
@@ -463,23 +512,184 @@ class ActivityMonitoringManager: ObservableObject {
             "identifierForVendor": device.identifierForVendor?.uuidString ?? "",
             "batteryLevel": device.batteryLevel,
             "batteryState": device.batteryState.rawValue,
-            "timestamp": Timestamp()
+            // Always use Double for timestamp
+            "timestamp": Date().timeIntervalSince1970
         ]
     }
+
+    private func sendShutdownSignal() async {
+        guard let currentUser = Auth.auth().currentUser else { return }
+        
+        print("🔄 Sending graceful shutdown signal")
+        
+        do {
+            let data: [String: Any] = [
+                "activityType": "app_shutdown",
+                "timestamp": Date().timeIntervalSince1970
+            ]
+            
+            let result = try await functions.httpsCallable("updateDeviceActivity").call(data)
+            print("✅ Graceful shutdown signal sent successfully")
+            
+            // Store shutdown timestamp locally
+            UserDefaults.standard.set(Date(), forKey: "lastGracefulShutdown")
+            
+        } catch {
+            print("❌ Error sending shutdown signal: \(error)")
+        }
+    }
+
+    private func sendBackgroundSignal() async {
+        guard let currentUser = Auth.auth().currentUser else { return }
+        
+        print("🔄 Sending background signal")
+        
+        do {
+            let data: [String: Any] = [
+                "activityType": "app_background",
+                "timestamp": Date().timeIntervalSince1970
+            ]
+            
+            let result = try await functions.httpsCallable("updateDeviceActivity").call(data)
+            print("✅ Background signal sent successfully")
+            
+        } catch {
+            print("❌ Error sending background signal: \(error)")
+        }
+    }
+
+    private func isAppInstalled() -> Bool {
+        // Simulator-safe app installation check
+        // In simulator, always return true since we can't delete the app
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        // On real device, check if app bundle exists
+        let bundleId = Bundle.main.bundleIdentifier ?? ""
+        return !bundleId.isEmpty
+        #endif
+    }
+    
+    private func shouldSendDeletionAlert() -> Bool {
+        // Check if we sent a graceful shutdown signal recently
+        let lastShutdown = UserDefaults.standard.object(forKey: "lastGracefulShutdown") as? Date
+        let timeSinceShutdown = Date().timeIntervalSince(lastShutdown ?? Date.distantPast)
+        
+        // Check if app is still installed
+        let appStillInstalled = isAppInstalled()
+        
+        print("🔍 Deletion alert check:")
+        print("   - Time since shutdown: \(timeSinceShutdown) seconds")
+        print("   - App still installed: \(appStillInstalled)")
+        print("   - Should alert: \(timeSinceShutdown > 300 && !appStillInstalled)")
+        
+        // Only alert if:
+        // 1. No graceful shutdown signal was sent recently (within 5 minutes)
+        // 2. AND the app is not installed
+        return timeSinceShutdown > 300 && !appStillInstalled
+    }
+
+    private func notifyParentOfAppDeletion() async {
+        // This method is now redundant since we use the missed heartbeat system
+        // The missed heartbeat notifications will handle all cases
+        print("🚨 App deletion detected - will be handled by missed heartbeat system")
+    }
+
+    // MARK: - Background Heartbeat System
+    
+    private func scheduleBackgroundHeartbeat() {
+        // Check if background tasks are available
+        guard BGTaskScheduler.shared.backgroundRefreshStatus == .available else {
+            print("⚠️ Background refresh not available - skipping background task scheduling")
+            return
+        }
+        let request = BGProcessingTaskRequest(identifier: "com.watchwise.heartbeat")
+        request.requiresNetworkConnectivity = true
+        request.requiresExternalPower = false
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 60) // Schedule for 1 minute from now
+        
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            print("✅ Background heartbeat task scheduled for: \(Date(timeIntervalSinceNow: 60))")
+            print("📅 Current time: \(Date())")
+            print("⏰ Task will run in: 60 seconds")
+        } catch {
+            print("❌ Failed to schedule background heartbeat: \(error)")
+            print("🔍 Error details: \(error.localizedDescription)")
+
+            // Try to re-register the task if it's not found
+            if (error as NSError).code == 1 {
+                print("🔄 Attempting to re-register background task...")
+                BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.watchwise.heartbeat", using: nil) { task in
+                    print("🎯 Background task re-registered")
+                    self.handleBackgroundHeartbeat(task: task as! BGProcessingTask)
+                }
+            }
+        }
+    }
+    
+    func handleBackgroundHeartbeat(task: BGProcessingTask) {
+        print("🔄 Background heartbeat task started at: \(Date())")
+        print("📱 App state: \(UIApplication.shared.applicationState.rawValue)")
+        print("🔋 Battery level: \(UIDevice.current.batteryLevel)")
+        
+        // Set up task expiration handler
+        task.expirationHandler = {
+            print("⏰ Background heartbeat task expired at: \(Date())")
+            task.setTaskCompleted(success: false)
+        }
+        
+        // Send heartbeat in background
+        Task {
+            do {
+                print("💓 Sending background heartbeat...")
+                await sendHeartbeat()
+                
+                // Schedule next background heartbeat
+                print("📅 Scheduling next background heartbeat...")
+                scheduleBackgroundHeartbeat()
+                
+                // Mark task as completed
+                task.setTaskCompleted(success: true)
+                print("✅ Background heartbeat completed successfully at: \(Date())")
+                
+            } catch {
+                print("❌ Background heartbeat failed: \(error)")
+                print("🔍 Error details: \(error.localizedDescription)")
+                task.setTaskCompleted(success: false)
+            }
+        }
+    }
+    
     
     // MARK: - Background Task Management
     
-    private func registerBackgroundTask() {
-        backgroundTask = UIApplication.shared.beginBackgroundTask { [weak self] in
-            self?.endBackgroundTask()
+    private func endBackgroundTask(_ task: UIBackgroundTaskIdentifier) {
+        if task != .invalid {
+            UIApplication.shared.endBackgroundTask(task)
+        }
+    }
+
+    // MARK: - Debug Methods (for testing)
+    
+    func debugTriggerBackgroundHeartbeat() {
+        print("🧪 DEBUG: Manually triggering background heartbeat")
+        print("📱 Current app state: \(UIApplication.shared.applicationState.rawValue)")
+        print("⏰ Current time: \(Date())")
+        
+        Task {
+            await sendHeartbeat()
+            scheduleBackgroundHeartbeat()
         }
     }
     
-    private func endBackgroundTask() {
-        if backgroundTask != .invalid {
-            UIApplication.shared.endBackgroundTask(backgroundTask)
-            backgroundTask = .invalid
-        }
+    func debugShowBackgroundTaskStatus() {
+        print("🔍 DEBUG: Background task status")
+        print("📱 App state: \(UIApplication.shared.applicationState.rawValue)")
+        print("⏰ Current time: \(Date())")
+        print("💓 Is monitoring: \(isMonitoring)")
+        print("👶 Is child user: \(isChildUser)")
+        print("✅ Background tasks registered")
     }
     
     // MARK: - Public Methods
@@ -575,7 +785,6 @@ class ActivityMonitoringManager: ObservableObject {
         NotificationCenter.default.removeObserver(self)
         Task { @MainActor in
             stopHeartbeatMonitoring()
-            endBackgroundTask()
         }
     }
-} 
+}

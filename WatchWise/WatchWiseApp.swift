@@ -11,6 +11,8 @@ import FirebaseAuth
 import FirebaseFirestore
 import FirebaseMessaging
 import UserNotifications
+import BackgroundTasks
+import BackgroundTasks
 
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(
@@ -48,6 +50,9 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         UNUserNotificationCenter.current().delegate = self
         requestNotificationPermissions()
         
+        // Configure background tasks
+        configureBackgroundTasks()
+        
         print("🚀 WatchWise App initialized successfully")
         return true
     }
@@ -80,6 +85,28 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
         print("🔥 Failed to register for remote notifications: \(error.localizedDescription)")
+    }
+    
+    private func configureBackgroundTasks() {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.watchwise.heartbeat", using: nil) { task in
+            // This will be handled by ActivityMonitoringManager
+            print("🔄 Background task received in AppDelegate")
+        }
+        
+        print("✅ Background tasks configured in AppDelegate")
+    }
+    
+    private func configureBackgroundTasks() {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.watchwise.heartbeat", using: nil) { task in
+            // Handle background task by calling ActivityMonitoringManager
+            print("🔄 Background task received in AppDelegate")
+            
+            // Get the shared instance and handle the background heartbeat
+            let activityManager = ActivityMonitoringManager.shared
+            activityManager.handleBackgroundHeartbeat(task: task as! BGProcessingTask)
+        }
+        
+        print("✅ Background tasks configured in AppDelegate")
     }
 }
 

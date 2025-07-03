@@ -1,643 +1,790 @@
 //
-//  DevicePairingView.swift
+//  ActivityMonitoringManager.swift
 //  WatchWise
 //
-//  Created by Savir Wangoo on 6/2/25.
+//  Created by Savir Wangoo on 6/7/25.
 //
 
-//When you're ready to remove the demo mode (before production), just delete the "Development Mode Section" and the skipPairingWithDemoData() function.
-
-import SwiftUI
-import FirebaseFirestore
 import Foundation
+import FirebaseFirestore
 import FirebaseAuth
-import AVFoundation
-import AudioToolbox
-import PhotosUI
+import FirebaseFunctions
+import UIKit
+import BackgroundTasks
 
-struct DevicePairingView: View {
-    @EnvironmentObject var authManager: AuthenticationManager
-    @StateObject private var pairingManager = PairingManager()
-    @State private var pairCode = ""
-    @State private var showAlert = false
-    @State private var alertTitle = ""
-    @State private var alertMessage = ""
-    @State private var isSuccess = false
-    @State private var showQRScanner = false
-    @State private var showCameraPermissionAlert = false
+@MainActor
+class ActivityMonitoringManager: ObservableObject {
+    static let shared = ActivityMonitoringManager()
     
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 32) {
-                // Header
-                VStack(spacing: 16) {
-                    Image(systemName: "link.circle.fill")
-                        .font(.system(size: 80))
-                        .foregroundColor(.blue)
-                    
-                    Text("Connect to Your Child's Device")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.top, 40)
-                
-                // Instructions
-                VStack(alignment: .leading, spacing: 16) {
-                    InstructionRow(
-                        number: "1",
-                        text: "Install the WatchWise Kids app on your child's iPhone"
-                    )
-                    
-                    InstructionRow(
-                        number: "2",
-                        text: "Open that app and tap 'Generate Code'"
-                    )
-                    
-                    InstructionRow(
-                        number: "3",
-                        text: "Scan the QR code or enter the 6-digit code below:"
-                    )
-                }
-                .padding(.horizontal, 32)
-                
-                // QR Code Scanner Button
-                VStack(spacing: 16) {
-                    Button(action: {
-                        checkCameraPermissionAndShowScanner()
-                    }) {
-                        HStack {
-                            Image(systemName: "qrcode.viewfinder")
-                                .font(.title2)
-                            Text("Scan QR Code")
-                                .font(.headline)
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.green)
-                        .cornerRadius(12)
-                    }
-                    
-                    // Divider
-                    HStack {
-                        Rectangle()
-                            .frame(height: 1)
-                            .foregroundColor(.gray.opacity(0.3))
-                        
-                        Text("OR")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 16)
-                        
-                        Rectangle()
-                            .frame(height: 1)
-                            .foregroundColor(.gray.opacity(0.3))
-                    }
-                }
-                .padding(.horizontal, 32)
-                
-                // Code Input
-                VStack(spacing: 16) {
-                    TextField("Enter 6-digit code", text: $pairCode)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .font(.title2)
-                        .multilineTextAlignment(.center)
-                        .keyboardType(.numberPad)
-                        .onChange(of: pairCode) { newValue in
-                            // Limit to 6 digits and only numbers
-                            let filtered = newValue.filter { $0.isNumber }
-                            if filtered.count > 6 {
-                                pairCode = String(filtered.prefix(6))
-                            } else {
-                                pairCode = filtered
-                            }
-                        }
-                    
-                    Button(action: pairDevice) {
-                        if pairingManager.isLoading {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        } else {
-                            Text("Pair Devices")
-                                .font(.headline)
-                        }
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(pairCode.count == 6 && !pairingManager.isLoading ? Color.blue : Color.gray)
-                    .cornerRadius(12)
-                    .disabled(pairCode.count != 6 || pairingManager.isLoading)
-                    
-                    // Debug button for testing Firebase permissions
-                    Button(action: {
-                        Task {
-                            await pairingManager.testFirebasePermissions()
-                        }
-                    }) {
-                        Text("Test Firebase Permissions")
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                    }
-                    .padding(.top, 8)
-                    
-                    // Debug button for testing exact pairing update
-                    Button(action: {
-                        Task {
-                            await pairingManager.testExactPairingUpdate()
-                        }
-                    }) {
-                        Text("Test Exact Pairing Update")
-                            .font(.caption)
-                            .foregroundColor(.red)
-                    }
-                    .padding(.top, 4)
-                    
-                    // Debug button for testing basic Firebase operations
-                    Button(action: {
-                        Task {
-                            await pairingManager.testBasicFirebaseOperations()
-                        }
-                    }) {
-                        Text("Test Basic Firebase Operations")
-                            .font(.caption)
-                            .foregroundColor(.purple)
-                    }
-                    .padding(.top, 4)
-                }
-                .padding(.horizontal, 32)
-                
-                Spacer()
-                
-                // Privacy Note
-                VStack(spacing: 8) {
-                    Image(systemName: "lock.shield.fill")
-                        .foregroundColor(.green)
-                    
-                    Text("Your child's privacy is protected. We only collect screen time data that you can already see in iOS Settings.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.horizontal, 32)
-                .padding(.bottom, 32)
-            }
-            .navigationBarHidden(false)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Sign Out") {
-                        authManager.signOut()
-                    }
-                    .foregroundColor(.red)
-                }
-            }
-        }
-        .alert(alertTitle, isPresented: $showAlert) {
-            Button("OK") {
-                if isSuccess {
-                    // The ContentView will automatically navigate based on isDevicePaired
-                }
-            }
-        } message: {
-            Text(alertMessage)
-        }
-        .alert("Camera Permission Required", isPresented: $showCameraPermissionAlert) {
-            Button("Settings") {
-                if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(settingsUrl)
-                }
-            }
-            Button("Cancel") { }
-        } message: {
-            Text("Camera access is required to scan QR codes. Please enable it in Settings.")
-        }
-        .sheet(isPresented: $showQRScanner) {
-            QRCodeScannerView { scannedCode in
-                pairCode = scannedCode
-                showQRScanner = false
-            }
-        }
-        .onChange(of: pairingManager.errorMessage) { errorMessage in
-            if let error = errorMessage {
-                alertTitle = "Pairing Failed"
-                alertMessage = error
-                isSuccess = false
-                showAlert = true
-            }
-        }
-        .onChange(of: pairingManager.successMessage) { successMessage in
-            if let success = successMessage {
-                alertTitle = "Success!"
-                alertMessage = success
-                isSuccess = true
-                showAlert = true
-            }
-        }
-    }
+    @Published var isMonitoring = false
+    @Published var lastActivityTime: Date?
+    @Published var activityStatus: ActivityStatus = .unknown
+    @Published var missedHeartbeats: Int = 0
     
-    private func checkCameraPermissionAndShowScanner() {
-        print("🔍 Checking camera permission...")
+    private let firebaseManager = FirebaseManager.shared
+    private let functions = Functions.functions()
+    private var heartbeatTimer: Timer?
+    private var isChildUser: Bool = false
+    
+    enum ActivityStatus {
+        case active
+        case inactive
+        case unknown
         
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized:
-            print("✅ Camera authorized, showing scanner")
-            showQRScanner = true
-        case .notDetermined:
-            print("⏳ Camera permission not determined, requesting...")
-            AVCaptureDevice.requestAccess(for: .video) { granted in
-                DispatchQueue.main.async {
-                    if granted {
-                        print("✅ Camera permission granted, showing scanner")
-                        self.showQRScanner = true
-                    } else {
-                        print("❌ Camera permission denied")
-                        self.showCameraPermissionAlert = true
-                    }
-                }
+        var description: String {
+            switch self {
+            case .active:
+                return "Active"
+            case .inactive:
+                return "Inactive"
+            case .unknown:
+                return "Unknown"
             }
-        case .denied, .restricted:
-            print("❌ Camera permission denied/restricted")
-            showCameraPermissionAlert = true
-        @unknown default:
-            print("❌ Unknown camera permission status")
-            showCameraPermissionAlert = true
+        }
+        
+        var color: String {
+            switch self {
+            case .active:
+                return "green"
+            case .inactive:
+                return "red"
+            case .unknown:
+                return "gray"
+            }
         }
     }
     
-    private func pairDevice() {
-        guard let parentId = authManager.currentUser?.id else {
-            alertTitle = "Authentication Error"
-            alertMessage = "Please sign in again."
-            isSuccess = false
-            showAlert = true
+    private init() {
+        setupActivityMonitoring()
+        setupAppLifecycleObservers()
+        setupBackgroundTasks()
+        checkUserType()
+        
+        // Enable battery monitoring for accurate battery level
+        UIDevice.current.isBatteryMonitoringEnabled = true
+    }
+    
+    // MARK: - User Type Detection
+    
+    private func checkUserType() {
+        // Check if current user is a child
+        if let userType = UserDefaults.standard.string(forKey: "userType") {
+            isChildUser = (userType == "Child")
+        } else if let currentUser = Auth.auth().currentUser {
+            // Fallback: check Firebase for user type
+            Task {
+                await loadUserTypeFromFirebase(userId: currentUser.uid)
+            }
+        }
+    }
+    
+    private func loadUserTypeFromFirebase(userId: String) async {
+        do {
+            let userDoc = try await firebaseManager.usersCollection.document(userId).getDocument()
+            if let data = userDoc.data(),
+               let userType = data["userType"] as? String {
+                await MainActor.run {
+                    self.isChildUser = (userType == "Child")
+                    if self.isChildUser {
+                        self.startHeartbeatMonitoring()
+                    }
+                }
+            }
+        } catch {
+            print("❌ Error loading user type: \(error)")
+        }
+    }
+    
+    // MARK: - Activity Monitoring Setup
+    
+    private func setupActivityMonitoring() {
+        // Start monitoring when app becomes active
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        
+        // Handle app going to background
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        
+        // Handle app termination
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appWillTerminate),
+            name: UIApplication.willTerminateNotification,
+            object: nil
+        )
+    }
+    
+    private func setupAppLifecycleObservers() {
+        // Monitor app state changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appStateChanged),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appStateChanged),
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
+    }
+
+    private func setupBackgroundTasks() {
+        // Background tasks are registered in AppDelegate
+        // This method is just for initialization
+        print("✅ Background task setup completed")
+    }
+    
+    // MARK: - Heartbeat System (Child Devices Only)
+    
+    func startHeartbeatMonitoring() {
+        guard isChildUser else {
+            print("📱 Not a child user - skipping heartbeat monitoring")
             return
         }
         
+        print("💓 Starting heartbeat monitoring for child device")
+        stopHeartbeatMonitoring()
+        
+        // Send initial heartbeat
         Task {
-            let result = await pairingManager.pairWithChild(
-                code: pairCode,
-                parentUserId: parentId
-            )
-            
-            await MainActor.run {
-                switch result {
-                case .success(let pairingSuccess):
-                    // Update the parent's device pairing status
-                    authManager.updateDevicePairingStatus(isPaired: true)
-                    
-                    // DEMO DATA - START (Store demo data for parent dashboard)
-                    UserDefaults.standard.set(pairingSuccess.childName, forKey: "demoChildName")
-                    UserDefaults.standard.set(pairingSuccess.deviceName, forKey: "demoDeviceName")
-                    UserDefaults.standard.set(true, forKey: "demoParentDevicePaired")
-                    
-                    // Set the pairing completion flag for the child device to detect
-                    print("🔗 Setting pairing completion flag for child device with code: \(pairCode)")
-                    print("🔗 Pairing success - childName: \(pairingSuccess.childName), deviceName: \(pairingSuccess.deviceName)")
-                    UserDefaults.standard.set(true, forKey: "demoChildPaired_\(pairCode)")
-                    UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "demoPairingTimestamp_\(pairCode)")
-                    
-                    // Verify the flag was set
-                    let flagSet = UserDefaults.standard.bool(forKey: "demoChildPaired_\(pairCode)")
-                    print("🔗 Verification - pairing flag set for \(pairCode): \(flagSet)")
-                    
-                    // Debug the pairing status
-                    authManager.debugPairingStatus()
-                    // DEMO DATA - END
-                    
-                    alertTitle = "Pairing Successful!"
-                    alertMessage = "Successfully connected to \(pairingSuccess.childName)'s device. You can now monitor their screen time."
-                    isSuccess = true
-                    showAlert = true
-                    
-                case .failure:
-                    // Error is handled by the onChange modifier above
-                    break
-                }
+            await sendHeartbeat()
+        }
+        
+        // Start timer for heartbeats (30 seconds for testing, change back to 900 for production)
+        let heartbeatInterval: TimeInterval = 30 // 30 seconds for testing, 900 for production
+        heartbeatTimer = Timer.scheduledTimer(withTimeInterval: heartbeatInterval, repeats: true) { [weak self] _ in
+            Task {
+                await self?.sendHeartbeat()
             }
         }
-    }
-}
 
-struct InstructionRow: View {
-    let number: String
-    let text: String
-    
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(number)
-                .font(.headline)
-                .foregroundColor(.white)
-                .frame(width: 24, height: 24)
-                .background(Color.blue)
-                .clipShape(Circle())
-            
-            Text(text)
-                .font(.body)
-                .foregroundColor(.primary)
-            
-            Spacer()
-        }
-    }
-}
-
-#Preview {
-    DevicePairingView()
-        .environmentObject(AuthenticationManager())
-}
-
-// MARK: - QR Code Scanner View
-
-struct QRCodeScannerView: UIViewControllerRepresentable {
-    let onCodeScanned: (String) -> Void
-    
-    func makeUIViewController(context: Context) -> QRScannerViewController {
-        let scanner = QRScannerViewController()
-        scanner.delegate = context.coordinator
-        return scanner
-    }
-    
-    func updateUIViewController(_ uiViewController: QRScannerViewController, context: Context) {}
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onCodeScanned: onCodeScanned)
-    }
-    
-    class Coordinator: NSObject, QRScannerViewControllerDelegate {
-        let onCodeScanned: (String) -> Void
+        // Schedule background heartbeat task
+        scheduleBackgroundHeartbeat()
         
-        init(onCodeScanned: @escaping (String) -> Void) {
-            self.onCodeScanned = onCodeScanned
-        }
+        isMonitoring = true
+    }
+    
+    func stopHeartbeatMonitoring() {
+        print("💓 Stopping heartbeat monitoring")
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
+        isMonitoring = false
+    }
+    
+    func sendHeartbeat() async {
+        guard isChildUser else { return }
         
-        func didScanCode(_ code: String) {
-            onCodeScanned(code)
-        }
-    }
-}
-
-// MARK: - QR Scanner View Controller
-
-protocol QRScannerViewControllerDelegate: AnyObject {
-    func didScanCode(_ code: String)
-}
-
-class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-    weak var delegate: QRScannerViewControllerDelegate?
-    private var captureSession: AVCaptureSession?
-    private var previewLayer: AVCaptureVideoPreviewLayer?
-    
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        setupCamera()
-        setupUI()
+        print("💓 Sending heartbeat...")
+        await sendHeartbeatAsync()
     }
     
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        startSession()
-    }
-    
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        stopSession()
-    }
-    
-    private func setupCamera() {
-        print("📷 Setting up camera...")
-        
-        guard let videoCaptureDevice = AVCaptureDevice.default(for: .video) else {
-            print("❌ No video capture device available (simulator)")
-            // In simulator, just show the photo library option
-            setupUIForSimulator()
+    private func sendHeartbeatAsync() async {
+        guard let currentUser = Auth.auth().currentUser else {
+            print("❌ No authenticated user for heartbeat")
             return
         }
         
-        let videoInput: AVCaptureDeviceInput
+        print("💓 Starting heartbeat process for user: \(currentUser.uid)")
+        
+        // Register background task for this heartbeat
+        var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+        backgroundTask = UIApplication.shared.beginBackgroundTask { [weak self] in
+            self?.endBackgroundTask(backgroundTask)
+        }
+        
+        defer {
+            endBackgroundTask(backgroundTask)
+        }
         
         do {
-            videoInput = try AVCaptureDeviceInput(device: videoCaptureDevice)
-            print("✅ Video input created successfully")
+            var deviceInfo = getDeviceInfo()
+            // Ensure timestamp is a Double
+            if let ts = deviceInfo["timestamp"] as? Date {
+                deviceInfo["timestamp"] = ts.timeIntervalSince1970
+            } else if let ts = deviceInfo["timestamp"] as? String, let date = ISO8601DateFormatter().date(from: ts) {
+                deviceInfo["timestamp"] = date.timeIntervalSince1970
+            }
+            print("📱 Device info prepared: \(deviceInfo)")
+            print("Type of timestamp in deviceInfo:", type(of: deviceInfo["timestamp"] ?? "nil"))
+            
+            // Call Cloud Function to update heartbeat
+            let data: [String: Any] = [
+                "deviceInfo": deviceInfo,
+                "activityType": "heartbeat",
+                "timestamp": deviceInfo["timestamp"] ?? Date().timeIntervalSince1970
+            ]
+            print("Type of timestamp in data:", type(of: data["timestamp"] ?? "nil"))
+            print("📤 Calling cloud function with data: \(data)")
+            let result = try await functions.httpsCallable("updateDeviceActivity").call(data)
+            print("📥 Cloud function response received: \(result.data ?? "nil")")
+            
+            if let resultData = result.data as? [String: Any] {
+                print("📊 Result data: \(resultData)")
+                
+                if let success = resultData["success"] as? Bool {
+                    if success {
+                        print("✅ Heartbeat sent successfully")
+                        
+                        await MainActor.run {
+                            self.lastActivityTime = Date()
+                            self.missedHeartbeats = 0
+                            self.updateActivityStatus()
+                        }
+                    } else {
+                        print("❌ Cloud function returned success: false")
+                        if let error = resultData["error"] as? String {
+                            print("❌ Cloud function error: \(error)")
+                        }
+                        await handleMissedHeartbeat()
+                    }
+                } else {
+                    print("❌ No success field in response")
+                    await handleMissedHeartbeat()
+                }
+            } else {
+                print("❌ Invalid response format from cloud function")
+                await handleMissedHeartbeat()
+            }
+            
         } catch {
-            print("❌ Failed to create video input: \(error)")
-            setupUIForSimulator()
-            return
+            print("❌ Error sending heartbeat: \(error)")
+            print("❌ Error details: \(error.localizedDescription)")
+            await handleMissedHeartbeat()
         }
-        
-        captureSession = AVCaptureSession()
-        
-        if captureSession?.canAddInput(videoInput) == true {
-            captureSession?.addInput(videoInput)
-            print("✅ Video input added to session")
-        } else {
-            print("❌ Cannot add video input to session")
-            setupUIForSimulator()
-            return
-        }
-        
-        let metadataOutput = AVCaptureMetadataOutput()
-        
-        if captureSession?.canAddOutput(metadataOutput) == true {
-            captureSession?.addOutput(metadataOutput)
-            print("✅ Metadata output added to session")
-            
-            metadataOutput.setMetadataObjectsDelegate(self, queue: DispatchQueue.main)
-            metadataOutput.metadataObjectTypes = [.qr]
-            print("✅ QR code detection enabled")
-        } else {
-            print("❌ Cannot add metadata output to session")
-            setupUIForSimulator()
-            return
-        }
-        
-        print("✅ Camera setup completed successfully")
-        setupUI()
     }
     
-    private func setupUIForSimulator() {
-        print("📱 Setting up UI for simulator (no camera)")
-        setupUI()
+    private func handleMissedHeartbeat() async {
+        await MainActor.run {
+            missedHeartbeats += 1
+        }
         
-        // Show alert that camera is not available
-        DispatchQueue.main.async {
-            let alert = UIAlertController(
-                title: "Camera Not Available", 
-                message: "Camera is not available in simulator. Please use the Photo Library option to scan QR codes.", 
-                preferredStyle: .alert
+        // Send notification to parent about missed heartbeat
+        await notifyParentOfMissedHeartbeat()
+    }
+    
+    private func notifyParentOfMissedHeartbeat() async {
+        guard let currentUser = Auth.auth().currentUser else { return }
+        
+        do {
+            // Find parent-child relationship
+            let relationshipsQuery = firebaseManager.parentChildRelationshipsCollection
+                .whereField("childUserId", isEqualTo: currentUser.uid)
+                .whereField("isActive", isEqualTo: true)
+            
+            let snapshot = try await relationshipsQuery.getDocuments()
+            
+            if let relationship = snapshot.documents.first {
+                let relationshipData = relationship.data()
+                let parentUserId = relationshipData["parentUserId"] as? String ?? ""
+                let childName = relationshipData["childName"] as? String ?? "Child"
+                
+                // Determine notification message based on missed heartbeats
+                let (title, message) = getMissedHeartbeatMessage(missedHeartbeats: missedHeartbeats, childName: childName)
+                
+                // Create notification for parent
+                try await firebaseManager.db.collection("notifications").addDocument(data: [
+                    "parentUserId": parentUserId,
+                    "childUserId": currentUser.uid,
+                    "childName": childName,
+                    "type": "missed_heartbeat",
+                    "title": title,
+                    "message": message,
+                    "missedHeartbeats": missedHeartbeats,
+                    "timestamp": Timestamp(),
+                    "isRead": false
+                ])
+                
+                print("📧 Sent missed heartbeat notification to parent: \(title)")
+            }
+            
+        } catch {
+            print("❌ Error sending missed heartbeat notification: \(error)")
+        }
+    }
+    
+    private func getMissedHeartbeatMessage(missedHeartbeats: Int, childName: String) -> (String, String) {
+        switch missedHeartbeats {
+        case 1:
+            return (
+                "First Heartbeat Missed",
+                "\(childName)'s device missed its first heartbeat. The WatchWise app may have been closed or the device is having connectivity issues."
             )
-            alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
-                // Automatically open photo library
-                self.photoLibraryTapped()
-            })
-            self.present(alert, animated: true)
+        case 2:
+            return (
+                "Second Heartbeat Missed",
+                "\(childName)'s device has missed 2 consecutive heartbeats. The app may have been deleted or the device is turned off."
+            )
+        case 3:
+            return (
+                "Third Heartbeat Missed",
+                "\(childName)'s device has missed 3 consecutive heartbeats. The WatchWise app has likely been deleted from the device."
+            )
+        case 4:
+            return (
+                "Fourth Heartbeat Missed",
+                "\(childName)'s device has missed 4 consecutive heartbeats. The WatchWise app has almost certainly been deleted."
+            )
+        default:
+            return (
+                "Extended Heartbeat Failure",
+                "\(childName)'s device has been offline for an extended period. The WatchWise app has been deleted or the device is experiencing issues."
+            )
         }
     }
     
-    private func setupUI() {
-        view.backgroundColor = UIColor.black
-        
-        // Preview layer (only if camera session exists)
-        if let session = captureSession {
-            previewLayer = AVCaptureVideoPreviewLayer(session: session)
-            previewLayer?.frame = view.layer.bounds
-            previewLayer?.videoGravity = .resizeAspectFill
-            view.layer.addSublayer(previewLayer!)
-        } else {
-            // No camera available, show a placeholder
-            let placeholderLabel = UILabel()
-            placeholderLabel.text = "Camera not available\nUse Photo Library to scan QR codes"
-            placeholderLabel.textColor = .white
-            placeholderLabel.textAlignment = .center
-            placeholderLabel.numberOfLines = 0
-            placeholderLabel.font = UIFont.systemFont(ofSize: 18)
-            placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
-            view.addSubview(placeholderLabel)
-            
-            NSLayoutConstraint.activate([
-                placeholderLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-                placeholderLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-                placeholderLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
-                placeholderLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32)
-            ])
-        }
-        
-        // Close button
-        let closeButton = UIButton(type: .system)
-        closeButton.setTitle("Cancel", for: .normal)
-        closeButton.setTitleColor(.white, for: .normal)
-        closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.7)
-        closeButton.layer.cornerRadius = 8
-        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(closeButton)
-        
-        // Photo Library button (for simulator testing)
-        let photoButton = UIButton(type: .system)
-        photoButton.setTitle("Photo Library", for: .normal)
-        photoButton.setTitleColor(.white, for: .normal)
-        photoButton.backgroundColor = UIColor.blue.withAlphaComponent(0.8)
-        photoButton.layer.cornerRadius = 8
-        photoButton.addTarget(self, action: #selector(photoLibraryTapped), for: .touchUpInside)
-        photoButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(photoButton)
-        
-        NSLayoutConstraint.activate([
-            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
-            closeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            closeButton.widthAnchor.constraint(equalToConstant: 80),
-            closeButton.heightAnchor.constraint(equalToConstant: 40),
-            
-            photoButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
-            photoButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            photoButton.widthAnchor.constraint(equalToConstant: 120),
-            photoButton.heightAnchor.constraint(equalToConstant: 40)
-        ])
-        
-        // Instructions label
-        let instructionsLabel = UILabel()
-        if captureSession != nil {
-            instructionsLabel.text = "Position the QR code within the frame or tap Photo Library"
-        } else {
-            instructionsLabel.text = "Tap Photo Library to select a QR code image"
-        }
-        instructionsLabel.textColor = .white
-        instructionsLabel.textAlignment = .center
-        instructionsLabel.backgroundColor = UIColor.black.withAlphaComponent(0.7)
-        instructionsLabel.layer.cornerRadius = 8
-        instructionsLabel.font = UIFont.systemFont(ofSize: 16)
-        instructionsLabel.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(instructionsLabel)
-        
-        NSLayoutConstraint.activate([
-            instructionsLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            instructionsLabel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -32),
-            instructionsLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
-            instructionsLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32)
-        ])
-    }
+    // MARK: - Activity Tracking (Legacy - for non-child users)
     
-    private func startSession() {
-        print("🎬 Starting camera session...")
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            self?.captureSession?.startRunning()
-            print("✅ Camera session started")
+    @objc private func appDidBecomeActive() {
+        print("📱 App became active")
+        if !isChildUser {
+            recordActivity(type: "app_opened")
         }
     }
     
-    private func stopSession() {
-        print("⏹️ Stopping camera session...")
-        captureSession?.stopRunning()
-        print("✅ Camera session stopped")
-    }
-    
-    @objc private func closeTapped() {
-        dismiss(animated: true)
-    }
-    
-    @objc private func photoLibraryTapped() {
-        let imagePicker = UIImagePickerController()
-        imagePicker.delegate = self
-        imagePicker.sourceType = .photoLibrary
-        imagePicker.allowsEditing = false
-        present(imagePicker, animated: true)
-    }
-    
-    // MARK: - UIImagePickerControllerDelegate
-    
-    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
-        picker.dismiss(animated: true)
-        
-        if let image = info[.originalImage] as? UIImage {
-            // Scan QR code from the selected image
-            scanQRCodeFromImage(image)
+    @objc private func appDidEnterBackground() {
+        print("📱 App entered background")
+        if !isChildUser {
+            recordActivity(type: "app_backgrounded")
         }
-    }
-    
-    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-        picker.dismiss(animated: true)
-    }
-    
-    private func scanQRCodeFromImage(_ image: UIImage) {
-        guard let ciImage = CIImage(image: image) else {
-            print("❌ Could not create CIImage from selected image")
-            return
+        // Send background signal
+        Task {
+            await sendBackgroundSignal()
         }
-        
-        let context = CIContext()
-        let detector = CIDetector(ofType: CIDetectorTypeQRCode, context: context, options: [CIDetectorAccuracy: CIDetectorAccuracyHigh])
-        
-        let features = detector?.features(in: ciImage) ?? []
-        
-        for feature in features {
-            if let qrFeature = feature as? CIQRCodeFeature {
-                if let qrCodeString = qrFeature.messageString {
-                    print("✅ QR code found in image: \(qrCodeString)")
-                    delegate?.didScanCode(qrCodeString)
-                    return
+
+        // Also send shutdown signal when going to background (more reliable)
+        // This helps catch cases where appWillTerminate isn't called
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            // If app is still in background after 1 second, send shutdown signal
+            if UIApplication.shared.applicationState == .background {
+                Task {
+                    await self.sendShutdownSignal()
                 }
             }
         }
-        
-        print("❌ No QR code found in selected image")
-        // Show alert to user
-        let alert = UIAlertController(title: "No QR Code Found", message: "The selected image doesn't contain a valid QR code.", preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
-        present(alert, animated: true)
     }
     
-    // MARK: - AVCaptureMetadataOutputObjectsDelegate
+    @objc private func appWillTerminate() {
+        print("📱 App will terminate")
+        if !isChildUser {
+            recordActivity(type: "app_closed")
+        }
+        // Send graceful shutdown signal
+        Task {
+            await sendShutdownSignal()
+        }
+        stopHeartbeatMonitoring()
+    }
     
-    func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
-        if let metadataObject = metadataObjects.first {
-            guard let readableObject = metadataObject as? AVMetadataMachineReadableCodeObject else { return }
-            guard let stringValue = readableObject.stringValue else { return }
+    @objc private func appStateChanged() {
+        updateActivityStatus()
+    }
+    
+    // MARK: - Legacy Activity Recording (for non-child users)
+    
+    func recordActivity(type: String) {
+        guard !isChildUser else { return } // Child users use heartbeat system
+        
+        Task {
+            await recordActivityAsync(type: type)
+        }
+    }
+    
+    private func recordActivityAsync(type: String) async {
+        guard let currentUser = Auth.auth().currentUser else {
+            print("❌ No authenticated user for activity recording")
+            return
+        }
+        
+        do {
+            let deviceInfo = getDeviceInfo()
             
-            // Validate that it's a 6-digit code
-            if stringValue.count == 6 && stringValue.allSatisfy({ $0.isNumber }) {
-                AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
-                delegate?.didScanCode(stringValue)
+            // Call Cloud Function to update activity
+            let data: [String: Any] = [
+                "deviceInfo": deviceInfo,
+                "activityType": type
+            ]
+            
+            let result = try await functions.httpsCallable("updateDeviceActivity").call(data)
+            
+            if let resultData = result.data as? [String: Any],
+               let success = resultData["success"] as? Bool,
+               success {
+                print("✅ Activity recorded successfully: \(type)")
+                
+                await MainActor.run {
+                    self.lastActivityTime = Date()
+                    self.updateActivityStatus()
+                }
+            } else {
+                print("❌ Failed to record activity")
             }
+            
+        } catch {
+            print("❌ Error recording activity: \(error)")
+            
+            // Fallback: Update directly in Firestore
+            await updateActivityInFirestore(type: type)
+        }
+    }
+    
+    private func updateActivityInFirestore(type: String) async {
+        guard let currentUser = Auth.auth().currentUser else { return }
+        
+        do {
+            let deviceInfo = getDeviceInfo()
+            
+            try await firebaseManager.usersCollection.document(currentUser.uid).updateData([
+                "lastActiveAt": Timestamp(),
+                "deviceInfo": deviceInfo,
+                "lastActivityType": type
+            ])
+            
+            // Update parent-child relationships if this is a child device
+            let relationshipsQuery = firebaseManager.parentChildRelationshipsCollection
+                .whereField("childUserId", isEqualTo: currentUser.uid)
+                .whereField("isActive", isEqualTo: true)
+            
+            let snapshot = try await relationshipsQuery.getDocuments()
+            
+            if !snapshot.documents.isEmpty {
+                let batch = firebaseManager.db.batch()
+                
+                for doc in snapshot.documents {
+                    batch.updateData([
+                        "lastSyncAt": Timestamp(),
+                        "childDeviceInfo": deviceInfo
+                    ], forDocument: doc.reference)
+                }
+                
+                try await batch.commit()
+                print("✅ Updated \(snapshot.documents.count) parent-child relationships")
+            }
+            
+        } catch {
+            print("❌ Error updating activity in Firestore: \(error)")
+        }
+    }
+    
+    // MARK: - Activity Status
+    
+    private func updateActivityStatus() {
+        guard let lastActivity = lastActivityTime else {
+            activityStatus = .unknown
+            return
+        }
+        
+        let timeSinceLastActivity = Date().timeIntervalSince(lastActivity)
+        let threshold: TimeInterval = isChildUser ? 1800 : 300 // 30 min for child, 5 min for others
+        
+        if timeSinceLastActivity < threshold {
+            activityStatus = .active
+        } else {
+            activityStatus = .inactive
+        }
+    }
+    
+    // MARK: - Device Information
+    
+    private func getDeviceInfo() -> [String: Any] {
+        let device = UIDevice.current
+        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
+        let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown"
+        
+        return [
+            "deviceModel": device.model,
+            "systemName": device.systemName,
+            "systemVersion": device.systemVersion,
+            "appVersion": appVersion,
+            "buildNumber": buildNumber,
+            "deviceName": device.name,
+            "identifierForVendor": device.identifierForVendor?.uuidString ?? "",
+            "batteryLevel": device.batteryLevel,
+            "batteryState": device.batteryState.rawValue,
+            // Always use Double for timestamp
+            "timestamp": Date().timeIntervalSince1970
+        ]
+    }
+
+    private func sendShutdownSignal() async {
+        guard let currentUser = Auth.auth().currentUser else { return }
+        
+        print("🔄 Sending graceful shutdown signal")
+        
+        do {
+            let data: [String: Any] = [
+                "activityType": "app_shutdown",
+                "timestamp": Date().timeIntervalSince1970
+            ]
+            
+            let result = try await functions.httpsCallable("updateDeviceActivity").call(data)
+            print("✅ Graceful shutdown signal sent successfully")
+            
+            // Store shutdown timestamp locally
+            UserDefaults.standard.set(Date(), forKey: "lastGracefulShutdown")
+            
+        } catch {
+            print("❌ Error sending shutdown signal: \(error)")
+        }
+    }
+
+    private func sendBackgroundSignal() async {
+        guard let currentUser = Auth.auth().currentUser else { return }
+        
+        print("🔄 Sending background signal")
+        
+        do {
+            let data: [String: Any] = [
+                "activityType": "app_background",
+                "timestamp": Date().timeIntervalSince1970
+            ]
+            
+            let result = try await functions.httpsCallable("updateDeviceActivity").call(data)
+            print("✅ Background signal sent successfully")
+            
+        } catch {
+            print("❌ Error sending background signal: \(error)")
+        }
+    }
+
+    private func isAppInstalled() -> Bool {
+        // Simulator-safe app installation check
+        // In simulator, always return true since we can't delete the app
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        // On real device, check if app bundle exists
+        let bundleId = Bundle.main.bundleIdentifier ?? ""
+        return !bundleId.isEmpty
+        #endif
+    }
+    
+    private func shouldSendDeletionAlert() -> Bool {
+        // Check if we sent a graceful shutdown signal recently
+        let lastShutdown = UserDefaults.standard.object(forKey: "lastGracefulShutdown") as? Date
+        let timeSinceShutdown = Date().timeIntervalSince(lastShutdown ?? Date.distantPast)
+        
+        // Check if app is still installed
+        let appStillInstalled = isAppInstalled()
+        
+        print("🔍 Deletion alert check:")
+        print("   - Time since shutdown: \(timeSinceShutdown) seconds")
+        print("   - App still installed: \(appStillInstalled)")
+        print("   - Should alert: \(timeSinceShutdown > 300 && !appStillInstalled)")
+        
+        // Only alert if:
+        // 1. No graceful shutdown signal was sent recently (within 5 minutes)
+        // 2. AND the app is not installed
+        return timeSinceShutdown > 300 && !appStillInstalled
+    }
+
+    private func notifyParentOfAppDeletion() async {
+        // This method is now redundant since we use the missed heartbeat system
+        // The missed heartbeat notifications will handle all cases
+        print("🚨 App deletion detected - will be handled by missed heartbeat system")
+    }
+
+    // MARK: - Background Heartbeat System
+    
+    private func scheduleBackgroundHeartbeat() {
+        // Check if background tasks are available
+        guard BGTaskScheduler.shared.backgroundRefreshStatus == .available else {
+            print("⚠️ Background refresh not available - skipping background task scheduling")
+            return
+        }
+        let request = BGProcessingTaskRequest(identifier: "com.watchwise.heartbeat")
+        request.requiresNetworkConnectivity = true
+        request.requiresExternalPower = false
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 60) // Schedule for 1 minute from now
+        
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            print("✅ Background heartbeat task scheduled for: \(Date(timeIntervalSinceNow: 60))")
+            print("📅 Current time: \(Date())")
+            print("⏰ Task will run in: 60 seconds")
+        } catch {
+            print("❌ Failed to schedule background heartbeat: \(error)")
+            print("🔍 Error details: \(error.localizedDescription)")
+
+            // Try to re-register the task if it's not found
+            if (error as NSError).code == 1 {
+                print("🔄 Attempting to re-register background task...")
+                BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.watchwise.heartbeat", using: nil) { task in
+                    print("🎯 Background task re-registered")
+                    self.handleBackgroundHeartbeat(task: task as! BGProcessingTask)
+                }
+            }
+        }
+    }
+    
+    func handleBackgroundHeartbeat(task: BGProcessingTask) {
+        print("🔄 Background heartbeat task started at: \(Date())")
+        print("📱 App state: \(UIApplication.shared.applicationState.rawValue)")
+        print("🔋 Battery level: \(UIDevice.current.batteryLevel)")
+        
+        // Set up task expiration handler
+        task.expirationHandler = {
+            print("⏰ Background heartbeat task expired at: \(Date())")
+            task.setTaskCompleted(success: false)
+        }
+        
+        // Send heartbeat in background
+        Task {
+            do {
+                print("💓 Sending background heartbeat...")
+                await sendHeartbeat()
+                
+                // Schedule next background heartbeat
+                print("📅 Scheduling next background heartbeat...")
+                scheduleBackgroundHeartbeat()
+                
+                // Mark task as completed
+                task.setTaskCompleted(success: true)
+                print("✅ Background heartbeat completed successfully at: \(Date())")
+                
+            } catch {
+                print("❌ Background heartbeat failed: \(error)")
+                print("🔍 Error details: \(error.localizedDescription)")
+                task.setTaskCompleted(success: false)
+            }
+        }
+    }
+    
+    
+    // MARK: - Background Task Management
+    
+    private func endBackgroundTask(_ task: UIBackgroundTaskIdentifier) {
+        if task != .invalid {
+            UIApplication.shared.endBackgroundTask(task)
+        }
+    }
+
+    // MARK: - Debug Methods (for testing)
+    
+    func debugTriggerBackgroundHeartbeat() {
+        print("🧪 DEBUG: Manually triggering background heartbeat")
+        print("📱 Current app state: \(UIApplication.shared.applicationState.rawValue)")
+        print("⏰ Current time: \(Date())")
+        
+        Task {
+            await sendHeartbeat()
+            scheduleBackgroundHeartbeat()
+        }
+    }
+    
+    func debugShowBackgroundTaskStatus() {
+        print("🔍 DEBUG: Background task status")
+        print("📱 App state: \(UIApplication.shared.applicationState.rawValue)")
+        print("⏰ Current time: \(Date())")
+        print("💓 Is monitoring: \(isMonitoring)")
+        print("👶 Is child user: \(isChildUser)")
+        print("✅ Background tasks registered")
+    }
+    
+    // MARK: - Public Methods
+    
+    func startMonitoring() {
+        print("📱 Starting activity monitoring")
+        
+        // Force refresh user type from Firebase
+        if let currentUser = Auth.auth().currentUser {
+            Task {
+                await loadUserTypeFromFirebase(userId: currentUser.uid)
+                
+                await MainActor.run {
+                    if self.isChildUser {
+                        self.startHeartbeatMonitoring()
+                    } else {
+                        print("📱 Starting activity monitoring for non-child user")
+                        self.recordActivity(type: "monitoring_started")
+                    }
+                }
+            }
+        } else {
+            // Fallback to local check
+            checkUserType()
+            if isChildUser {
+                startHeartbeatMonitoring()
+            } else {
+                print("📱 Starting activity monitoring for non-child user")
+                recordActivity(type: "monitoring_started")
+            }
+        }
+    }
+    
+    func stopMonitoring() {
+        if isChildUser {
+            stopHeartbeatMonitoring()
+        } else {
+            print("📱 Stopping activity monitoring")
+            recordActivity(type: "monitoring_stopped")
+        }
+    }
+    
+    func getActivitySummary() async -> [String: Any]? {
+        guard let currentUser = Auth.auth().currentUser else { return nil }
+        
+        do {
+            let userDoc = try await firebaseManager.usersCollection.document(currentUser.uid).getDocument()
+            return userDoc.data()
+        } catch {
+            print("❌ Error getting activity summary: \(error)")
+            return nil
+        }
+    }
+    
+    /// Manually update sync time (can be called from child device)
+    func updateSyncTime() async {
+        guard let currentUser = Auth.auth().currentUser else { return }
+        
+        do {
+            // Update user's last active time
+            try await firebaseManager.usersCollection.document(currentUser.uid).updateData([
+                "lastActiveAt": Timestamp()
+            ])
+            
+            // Update parent-child relationships
+            let relationshipsQuery = firebaseManager.parentChildRelationshipsCollection
+                .whereField("childUserId", isEqualTo: currentUser.uid)
+                .whereField("isActive", isEqualTo: true)
+            
+            let snapshot = try await relationshipsQuery.getDocuments()
+            
+            if !snapshot.documents.isEmpty {
+                let batch = firebaseManager.db.batch()
+                
+                for doc in snapshot.documents {
+                    batch.updateData([
+                        "lastSyncAt": Timestamp()
+                    ], forDocument: doc.reference)
+                }
+                
+                try await batch.commit()
+                print("✅ Manually updated sync time for \(snapshot.documents.count) relationships")
+            }
+            
+        } catch {
+            print("❌ Error manually updating sync time: \(error)")
+        }
+    }
+    
+    // MARK: - Cleanup
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+        Task { @MainActor in
+            stopHeartbeatMonitoring()
         }
     }
 }

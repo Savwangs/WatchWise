@@ -6,6 +6,18 @@
 	<array>
 		<string>remote-notification</string>
 		<string>processing</string>
+		<string>background-processing</string>
 	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.watchwise.heartbeat</string>
+		<string>com.watchwise.deviceactivity</string>
+	</array>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>com.watchwise.screentime-monitoring</string>
+	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 </dict>
 </plist>

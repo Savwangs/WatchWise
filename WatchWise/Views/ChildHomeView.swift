@@ -199,6 +199,16 @@ struct ChildHomeView: View {
                             activityManager.startMonitoring()
                         }
                         .foregroundColor(.green)
+                        
+                        Button("Debug: Trigger Background Heartbeat") {
+                            activityManager.debugTriggerBackgroundHeartbeat()
+                        }
+                        .foregroundColor(.orange)
+                        
+                        Button("Debug: Show Background Status") {
+                            activityManager.debugShowBackgroundTaskStatus()
+                        }
+                        .foregroundColor(.purple)
                     }
                 }
                 .navigationTitle("Settings")
