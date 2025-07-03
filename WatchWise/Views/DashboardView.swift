@@ -5,7 +5,6 @@
 //  Created by Savir Wangoo on 6/2/25.
 //
 import SwiftUI
-import Charts
 import FirebaseAuth
 import FirebaseFirestore
 
@@ -380,9 +379,9 @@ struct DataDisplayView: View {
                 TopAppsCard(appUsages: screenTimeData.appUsages)
             }
             
-            // Hourly Breakdown Chart (only show if we have hourly data)
-            if !screenTimeData.hourlyBreakdown.isEmpty {
-                AppUsageTimelineCard(hourlyData: screenTimeData.hourlyBreakdown)
+            // App Usage Timeline (only show if we have app data with usage ranges)
+            if !screenTimeData.appUsages.isEmpty {
+                AppUsageTimelineCard(appUsages: screenTimeData.appUsages)
             }
             
             // Data Collection Info
@@ -523,7 +522,9 @@ struct TopAppsCard: View {
 
 // MARK: - App Usage Timeline Card
 struct AppUsageTimelineCard: View {
-    let hourlyData: [Int: TimeInterval]
+    let appUsages: [AppUsage]
+    @State private var selectedApp: AppUsage?
+    @State private var showingAppDetail = false
     
     // App colors for consistent visualization
     private let appColors: [String: Color] = [
@@ -549,9 +550,9 @@ struct AppUsageTimelineCard: View {
         "Among Us": .purple
     ]
     
-    // Generate timeline data from hourly breakdown
-    private var timelineData: [(hour: Int, duration: TimeInterval)] {
-        return hourlyData.sorted { $0.key < $1.key }.map { (hour: $0.key, duration: $0.value) }
+    // Get apps with usage ranges
+    private var appsWithRanges: [AppUsage] {
+        return appUsages.filter { $0.usageRanges != nil && !($0.usageRanges?.isEmpty ?? true) }
     }
     
     var body: some View {
@@ -560,45 +561,240 @@ struct AppUsageTimelineCard: View {
             HStack {
                 Image(systemName: "clock.fill")
                     .foregroundColor(.blue)
-                Text("Hourly Usage")
+                Text("App Usage Timeline")
                     .font(.title2)
                     .fontWeight(.bold)
                 Spacer()
             }
             .padding(.horizontal)
             
-            // Timeline Chart
-            if timelineData.isEmpty {
-                Text("No hourly data available")
+            // Timeline Content
+            if appsWithRanges.isEmpty {
+                Text("No detailed usage data available")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .padding()
             } else {
-                Chart {
-                    ForEach(timelineData, id: \.hour) { item in
-                        BarMark(
-                            x: .value("Hour", formatHour(item.hour)),
-                            y: .value("Duration", item.duration / 60) // Convert to minutes
-                        )
-                        .foregroundStyle(.blue.gradient)
-                        .cornerRadius(4)
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(appsWithRanges, id: \.bundleIdentifier) { app in
+                            AppTimelineItem(
+                                app: app,
+                                color: appColors[app.appName] ?? .gray,
+                                onTap: {
+                                    selectedApp = app
+                                    showingAppDetail = true
+                                }
+                            )
+                        }
                     }
+                    .padding(.horizontal)
                 }
-                .frame(height: 200)
-                .padding()
+                .frame(maxHeight: 300)
             }
         }
         .padding()
         .background(Color(.systemGray6))
         .cornerRadius(12)
         .padding(.horizontal)
+        .sheet(isPresented: $showingAppDetail) {
+            if let app = selectedApp {
+                AppDetailView(app: app, color: appColors[app.appName] ?? .gray)
+            }
+        }
+    }
+}
+
+// MARK: - App Timeline Item
+struct AppTimelineItem: View {
+    let app: AppUsage
+    let color: Color
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                // App Icon/Color
+                Circle()
+                    .fill(color)
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Image(systemName: "app.fill")
+                            .foregroundColor(.white)
+                            .font(.system(size: 16))
+                    )
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(app.appName)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    
+                    Text("Total: \(formatDuration(app.duration))")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    // Show first usage range if available
+                    if let firstRange = app.usageRanges?.first {
+                        Text("Last session: \(firstRange.formattedRange)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.secondary)
+                    .font(.caption)
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+        }
+        .buttonStyle(PlainButtonStyle())
     }
     
-    private func formatHour(_ hour: Int) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "ha"
-        let date = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) ?? Date()
-        return formatter.string(from: date).lowercased()
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = Int(duration) % 3600 / 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+}
+
+// MARK: - App Detail View
+struct AppDetailView: View {
+    let app: AppUsage
+    let color: Color
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    // App Header
+                    HStack(spacing: 16) {
+                        Circle()
+                            .fill(color)
+                            .frame(width: 60, height: 60)
+                            .overlay(
+                                Image(systemName: "app.fill")
+                                    .foregroundColor(.white)
+                                    .font(.system(size: 24))
+                            )
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(app.appName)
+                                .font(.title2)
+                                .fontWeight(.bold)
+                            
+                            Text("Total Usage: \(formatDuration(app.duration))")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                    }
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+                    
+                    // Usage Sessions
+                    if let usageRanges = app.usageRanges, !usageRanges.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Usage Sessions")
+                                .font(.headline)
+                                .padding(.horizontal)
+                            
+                            LazyVStack(spacing: 8) {
+                                ForEach(usageRanges, id: \.sessionId) { range in
+                                    UsageSessionRow(range: range)
+                                }
+                            }
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Usage Sessions")
+                                .font(.headline)
+                                .padding(.horizontal)
+                            
+                            Text("No detailed session data available")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal)
+                        }
+                    }
+                    
+                    Spacer()
+                }
+                .padding()
+            }
+            .navigationTitle("App Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = Int(duration) % 3600 / 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
+    }
+}
+
+// MARK: - Usage Session Row
+struct UsageSessionRow: View {
+    let range: AppUsageRange
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(range.formattedRange)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                Text("Duration: \(formatDuration(range.duration))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            Image(systemName: "clock")
+                .foregroundColor(.blue)
+                .font(.caption)
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(8)
+        .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = Int(duration) % 3600 / 60
+        
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
     }
 }
 
