@@ -128,6 +128,12 @@ struct ContentView: View {
                 forceRefresh.toggle()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateToDashboard)) { _ in
+            // Force refresh of the view to trigger navigation to dashboard
+            DispatchQueue.main.async {
+                forceRefresh.toggle()
+            }
+        }
     }
 }
 

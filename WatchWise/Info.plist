@@ -19,5 +19,9 @@
 	</array>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<key>NSFamilyControlsUsageDescription</key>
+	<string>WatchWise uses Family Controls to monitor screen time and app usage to help parents manage their children's device usage.</string>
+	<key>NSDeviceActivityMonitoringUsageDescription</key>
+	<string>WatchWise monitors device activity to provide accurate screen time reports and detect new app usage.</string>
 </dict>
 </plist>

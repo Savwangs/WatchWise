@@ -32,6 +32,7 @@
 		E8AF1CD12DEEC5C9001BA1D6 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = E8AF1CD02DEEC5C9001BA1D6 /* FirebaseStorage */; };
 		E8AF1CD32DEEC5C9001BA1D6 /* FirebaseStorageCombine-Community in Frameworks */ = {isa = PBXBuildFile; productRef = E8AF1CD22DEEC5C9001BA1D6 /* FirebaseStorageCombine-Community */; };
 		E8AF1CD52DEEC5C9001BA1D6 /* FirebaseVertexAI in Frameworks */ = {isa = PBXBuildFile; productRef = E8AF1CD42DEEC5C9001BA1D6 /* FirebaseVertexAI */; };
+		E8D413842E162F1E00F4ABAF /* DeviceActivityReportExtension.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = E8D413782E162F1E00F4ABAF /* DeviceActivityReportExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -63,7 +64,28 @@
 			remoteGlobalIDString = E8AF1C462DEE9809001BA1D6;
 			remoteInfo = WatchWise;
 		};
+		E8D413822E162F1E00F4ABAF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E8AF1C3F2DEE9809001BA1D6 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E8D413772E162F1E00F4ABAF;
+			remoteInfo = DeviceActivityReportExtension;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		E8D413892E162F1E00F4ABAF /* Embed ExtensionKit Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(EXTENSIONS_FOLDER_PATH)";
+			dstSubfolderSpec = 16;
+			files = (
+				E8D413842E162F1E00F4ABAF /* DeviceActivityReportExtension.appex in Embed ExtensionKit Extensions */,
+			);
+			name = "Embed ExtensionKit Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		E804270A2DFB753A00E405F0 /* WatchWise Child.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "WatchWise Child.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -72,6 +94,7 @@
 		E8AF1C472DEE9809001BA1D6 /* WatchWise.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WatchWise.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E8AF1C542DEE980B001BA1D6 /* WatchWiseTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WatchWiseTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E8AF1C5E2DEE980B001BA1D6 /* WatchWiseUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WatchWiseUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		E8D413782E162F1E00F4ABAF /* DeviceActivityReportExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = DeviceActivityReportExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -81,6 +104,13 @@
 				Info.plist,
 			);
 			target = E8AF1C462DEE9809001BA1D6 /* WatchWise */;
+		};
+		E8D413882E162F1E00F4ABAF /* Exceptions for "DeviceActivityReportExtension" folder in "DeviceActivityReportExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = E8D413772E162F1E00F4ABAF /* DeviceActivityReportExtension */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -116,6 +146,14 @@
 		E8AF1C612DEE980B001BA1D6 /* WatchWiseUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = WatchWiseUITests;
+			sourceTree = "<group>";
+		};
+		E8D413792E162F1E00F4ABAF /* DeviceActivityReportExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E8D413882E162F1E00F4ABAF /* Exceptions for "DeviceActivityReportExtension" folder in "DeviceActivityReportExtension" target */,
+			);
+			path = DeviceActivityReportExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -188,6 +226,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E8D413752E162F1E00F4ABAF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -200,6 +245,7 @@
 				E804270B2DFB753A00E405F0 /* WatchWise Child */,
 				E80427192DFB753D00E405F0 /* WatchWise ChildTests */,
 				E80427232DFB753D00E405F0 /* WatchWise ChildUITests */,
+				E8D413792E162F1E00F4ABAF /* DeviceActivityReportExtension */,
 				E8AF1C482DEE9809001BA1D6 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -213,6 +259,7 @@
 				E804270A2DFB753A00E405F0 /* WatchWise Child.app */,
 				E80427162DFB753D00E405F0 /* WatchWise ChildTests.xctest */,
 				E80427202DFB753D00E405F0 /* WatchWise ChildUITests.xctest */,
+				E8D413782E162F1E00F4ABAF /* DeviceActivityReportExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -295,10 +342,12 @@
 				E8AF1C432DEE9809001BA1D6 /* Sources */,
 				E8AF1C442DEE9809001BA1D6 /* Frameworks */,
 				E8AF1C452DEE9809001BA1D6 /* Resources */,
+				E8D413892E162F1E00F4ABAF /* Embed ExtensionKit Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				E8D413832E162F1E00F4ABAF /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				E8AF1C492DEE9809001BA1D6 /* WatchWise */,
@@ -381,6 +430,28 @@
 			productReference = E8AF1C5E2DEE980B001BA1D6 /* WatchWiseUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		E8D413772E162F1E00F4ABAF /* DeviceActivityReportExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E8D413852E162F1E00F4ABAF /* Build configuration list for PBXNativeTarget "DeviceActivityReportExtension" */;
+			buildPhases = (
+				E8D413742E162F1E00F4ABAF /* Sources */,
+				E8D413752E162F1E00F4ABAF /* Frameworks */,
+				E8D413762E162F1E00F4ABAF /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				E8D413792E162F1E00F4ABAF /* DeviceActivityReportExtension */,
+			);
+			name = DeviceActivityReportExtension;
+			packageProductDependencies = (
+			);
+			productName = DeviceActivityReportExtension;
+			productReference = E8D413782E162F1E00F4ABAF /* DeviceActivityReportExtension.appex */;
+			productType = "com.apple.product-type.extensionkit-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -413,6 +484,9 @@
 						CreatedOnToolsVersion = 16.4;
 						TestTargetID = E8AF1C462DEE9809001BA1D6;
 					};
+					E8D413772E162F1E00F4ABAF = {
+						CreatedOnToolsVersion = 16.4;
+					};
 				};
 			};
 			buildConfigurationList = E8AF1C422DEE9809001BA1D6 /* Build configuration list for PBXProject "WatchWise" */;
@@ -438,6 +512,7 @@
 				E80427092DFB753A00E405F0 /* WatchWise Child */,
 				E80427152DFB753D00E405F0 /* WatchWise ChildTests */,
 				E804271F2DFB753D00E405F0 /* WatchWise ChildUITests */,
+				E8D413772E162F1E00F4ABAF /* DeviceActivityReportExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -479,6 +554,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		E8AF1C5C2DEE980B001BA1D6 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E8D413762E162F1E00F4ABAF /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -530,6 +612,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E8D413742E162F1E00F4ABAF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -552,6 +641,11 @@
 			isa = PBXTargetDependency;
 			target = E8AF1C462DEE9809001BA1D6 /* WatchWise */;
 			targetProxy = E8AF1C5F2DEE980B001BA1D6 /* PBXContainerItemProxy */;
+		};
+		E8D413832E162F1E00F4ABAF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E8D413772E162F1E00F4ABAF /* DeviceActivityReportExtension */;
+			targetProxy = E8D413822E162F1E00F4ABAF /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -933,6 +1027,58 @@
 			};
 			name = Release;
 		};
+		E8D413862E162F1E00F4ABAF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = DeviceActivityReportExtension/DeviceActivityReportExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KPV6238D38;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = DeviceActivityReportExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = DeviceActivityReportExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.skw.WatchWise.DeviceActivityReportExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		E8D413872E162F1E00F4ABAF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = DeviceActivityReportExtension/DeviceActivityReportExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KPV6238D38;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = DeviceActivityReportExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = DeviceActivityReportExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.skw.WatchWise.DeviceActivityReportExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -995,6 +1141,15 @@
 			buildConfigurations = (
 				E8AF1C6F2DEE980B001BA1D6 /* Debug */,
 				E8AF1C702DEE980B001BA1D6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E8D413852E162F1E00F4ABAF /* Build configuration list for PBXNativeTarget "DeviceActivityReportExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E8D413862E162F1E00F4ABAF /* Debug */,
+				E8D413872E162F1E00F4ABAF /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

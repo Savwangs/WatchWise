@@ -599,7 +599,7 @@ class ActivityMonitoringManager: ObservableObject {
     
     private func scheduleBackgroundHeartbeat() {
         // Check if background tasks are available
-        guard BGTaskScheduler.shared.backgroundRefreshStatus == .available else {
+        guard UIApplication.shared.backgroundRefreshStatus == .available else {
             print("⚠️ Background refresh not available - skipping background task scheduling")
             return
         }
@@ -616,15 +616,6 @@ class ActivityMonitoringManager: ObservableObject {
         } catch {
             print("❌ Failed to schedule background heartbeat: \(error)")
             print("🔍 Error details: \(error.localizedDescription)")
-
-            // Try to re-register the task if it's not found
-            if (error as NSError).code == 1 {
-                print("🔄 Attempting to re-register background task...")
-                BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.watchwise.heartbeat", using: nil) { task in
-                    print("🎯 Background task re-registered")
-                    self.handleBackgroundHeartbeat(task: task as! BGProcessingTask)
-                }
-            }
         }
     }
     

@@ -341,6 +341,79 @@ class DatabaseManager: ObservableObject {
             }
         */
     }
+    
+    // MARK: - New App Detection
+    
+    func saveNewAppDetection(_ detection: NewAppDetection, completion: @escaping (Result<Void, Error>) -> Void) {
+        let detectionData: [String: Any] = [
+            "appName": detection.appName,
+            "bundleIdentifier": detection.bundleIdentifier,
+            "detectedAt": Timestamp(date: detection.detectedAt),
+            "deviceId": detection.deviceId,
+            "isNotified": false
+        ]
+        
+        FirebaseManager.shared.db.collection("newAppDetections").addDocument(data: detectionData) { error in
+            if let error = error {
+                print("🔥 Error saving new app detection: \(error)")
+                completion(.failure(error))
+            } else {
+                print("✅ New app detection saved successfully")
+                completion(.success(()))
+            }
+        }
+    }
+    
+    func getNewAppDetections(for deviceId: String, completion: @escaping (Result<[NewAppDetection], Error>) -> Void) {
+        FirebaseManager.shared.db.collection("newAppDetections")
+            .whereField("deviceId", isEqualTo: deviceId)
+            .order(by: "detectedAt", descending: true)
+            .limit(to: 50)
+            .getDocuments { snapshot, error in
+                if let error = error {
+                    print("🔥 Error fetching new app detections: \(error)")
+                    completion(.failure(error))
+                    return
+                }
+                
+                let detections = snapshot?.documents.compactMap { document -> NewAppDetection? in
+                    let data = document.data()
+                    guard let appName = data["appName"] as? String,
+                          let bundleIdentifier = data["bundleIdentifier"] as? String,
+                          let detectedAt = (data["detectedAt"] as? Timestamp)?.dateValue(),
+                          let deviceId = data["deviceId"] as? String else {
+                        return nil
+                    }
+                    
+                    return NewAppDetection(
+                        appName: appName,
+                        bundleIdentifier: bundleIdentifier,
+                        detectedAt: detectedAt,
+                        deviceId: deviceId
+                    )
+                } ?? []
+                
+                print("✅ Fetched \(detections.count) new app detections")
+                completion(.success(detections))
+            }
+    }
+    
+    func markNewAppDetectionAsNotified(_ detectionId: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        FirebaseManager.shared.db.collection("newAppDetections")
+            .document(detectionId)
+            .updateData([
+                "isNotified": true,
+                "notifiedAt": Timestamp()
+            ]) { error in
+                if let error = error {
+                    print("🔥 Error marking detection as notified: \(error)")
+                    completion(.failure(error))
+                } else {
+                    print("✅ New app detection marked as notified")
+                    completion(.success(()))
+                }
+            }
+    }
 }
 
 

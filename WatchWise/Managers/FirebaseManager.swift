@@ -72,6 +72,10 @@ class FirebaseManager: ObservableObject {
         return db.collection("settings")
     }
     
+    var newAppDetectionsCollection: CollectionReference {
+        return db.collection("newAppDetections")
+    }
+    
     // MARK: - Legacy Collection References (for backward compatibility)
     
     var devicesCollection: CollectionReference {
@@ -167,7 +171,8 @@ class FirebaseManager: ObservableObject {
             "parentChildRelationships": parentChildRelationshipsCollection,
             "screenTimeData": screenTimeCollection,
             "messages": messagesCollection,
-            "settings": settingsCollection
+            "settings": settingsCollection,
+            "newAppDetections": newAppDetectionsCollection
         ]
         
         var results: [String: Bool] = [:]

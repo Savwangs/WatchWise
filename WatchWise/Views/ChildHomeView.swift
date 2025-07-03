@@ -13,6 +13,7 @@ struct ChildHomeView: View {
     @StateObject private var screenTimeDataManager = ScreenTimeDataManager()
     @StateObject private var activityManager = ActivityMonitoringManager.shared
     @State private var showSignOutAlert = false
+    @State private var showPermissionAlert = false
     
     var body: some View {
         TabView {
@@ -91,6 +92,70 @@ struct ChildHomeView: View {
                                 .frame(width: 8, height: 8)
                         }
                         .padding(.vertical, 8)
+                    }
+                    
+                    Section("Screen Time Monitoring") {
+                        HStack {
+                            Image(systemName: "clock.fill")
+                                .foregroundColor(.orange)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Screen Time Authorization")
+                                    .font(.body)
+                                Text(screenTimeDataManager.isAuthorized ? "Authorized" : "Not Authorized")
+                                    .font(.caption)
+                                    .foregroundColor(screenTimeDataManager.isAuthorized ? .green : .red)
+                            }
+                            Spacer()
+                            
+                            if !screenTimeDataManager.isAuthorized {
+                                Button("Grant Access") {
+                                    Task {
+                                        await screenTimeDataManager.requestAuthorization()
+                                    }
+                                }
+                                .foregroundColor(.blue)
+                                .font(.caption)
+                            }
+                        }
+                        
+                        HStack {
+                            Image(systemName: "chart.bar.fill")
+                                .foregroundColor(.purple)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Monitoring Status")
+                                    .font(.body)
+                                Text(screenTimeDataManager.isMonitoring ? "Active" : "Inactive")
+                                    .font(.caption)
+                                    .foregroundColor(screenTimeDataManager.isMonitoring ? .green : .red)
+                            }
+                            Spacer()
+                        }
+                        
+                        if !screenTimeDataManager.detectedNewApps.isEmpty {
+                            HStack {
+                                Image(systemName: "app.badge.plus")
+                                    .foregroundColor(.green)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("New Apps Detected")
+                                        .font(.body)
+                                    Text("\(screenTimeDataManager.detectedNewApps.count) new apps")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                }
+                                Spacer()
+                            }
+                        }
+                        
+                        if screenTimeDataManager.isAuthorized && !screenTimeDataManager.isMonitoring {
+                            Button("Start Monitoring") {
+                                Task {
+                                    if let deviceId = authManager.currentUser?.id {
+                                        await screenTimeDataManager.startScreenTimeMonitoring(for: deviceId)
+                                    }
+                                }
+                            }
+                            .foregroundColor(.green)
+                        }
                     }
                     
                     Section("Account") {
@@ -209,6 +274,23 @@ struct ChildHomeView: View {
                             activityManager.debugShowBackgroundTaskStatus()
                         }
                         .foregroundColor(.purple)
+                        
+                        // Screen Time Debug
+                        Button("Detect New Apps") {
+                            Task {
+                                await screenTimeDataManager.detectNewApps()
+                            }
+                        }
+                        .foregroundColor(.indigo)
+                        
+                        Button("Sync Screen Time Data") {
+                            Task {
+                                if let deviceId = authManager.currentUser?.id {
+                                    await screenTimeDataManager.syncScreenTimeData(for: deviceId)
+                                }
+                            }
+                        }
+                        .foregroundColor(.teal)
                     }
                 }
                 .navigationTitle("Settings")
@@ -227,13 +309,42 @@ struct ChildHomeView: View {
         } message: {
             Text("Are you sure you want to sign out? This will disconnect your device from your parent.")
         }
+        .alert("Permission Required", isPresented: $showPermissionAlert) {
+            Button("Grant Permission") {
+                Task {
+                    await screenTimeDataManager.requestAuthorization()
+                }
+            }
+            Button("Later", role: .cancel) { }
+        } message: {
+            Text("Screen Time monitoring requires Family Controls permission to track app usage and help your parent monitor your device usage.")
+        }
         .onAppear {
             // Start heartbeat monitoring for child device
             activityManager.startMonitoring()
+            
+            // Check if screen time authorization is needed
+            if !screenTimeDataManager.isAuthorized {
+                showPermissionAlert = true
+            } else if let deviceId = authManager.currentUser?.id {
+                // Start screen time monitoring if authorized
+                Task {
+                    await screenTimeDataManager.startScreenTimeMonitoring(for: deviceId)
+                }
+            }
+        }
+        .onChange(of: screenTimeDataManager.errorMessage) { errorMessage in
+            if let error = errorMessage {
+                print("🔥 Screen Time Error: \(error)")
+            }
         }
     }
     
     private func signOut() {
+        // Stop monitoring
+        screenTimeDataManager.stopMonitoring()
+        activityManager.stopMonitoring()
+        
         // Clear user defaults
         UserDefaults.standard.removeObject(forKey: "isChildMode")
         UserDefaults.standard.removeObject(forKey: "userType")

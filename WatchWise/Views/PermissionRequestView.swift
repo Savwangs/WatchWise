@@ -208,21 +208,28 @@ struct PermissionRequestView: View {
         isLoading = true
         
         // Request Family Controls authorization
-        AuthorizationCenter.shared.requestAuthorization { result in
-            DispatchQueue.main.async {
-                isLoading = false
+        Task {
+            do {
+                print("🔄 Requesting Family Controls authorization...")
+                try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
                 
-                switch result {
-                case .success:
+                await MainActor.run {
+                    isLoading = false
                     permissionGranted = true
+                    print("✅ Family Controls authorization granted")
+                    
                     // Auto-continue after a brief delay
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                         navigateToCodeGeneration = true
                     }
-                    
-                case .failure(let error):
+                }
+                
+            } catch {
+                await MainActor.run {
+                    isLoading = false
                     alertMessage = "Failed to grant permission: \(error.localizedDescription)\n\nPlease try again or contact support if the issue persists."
                     showAlert = true
+                    print("🔥 Authorization error: \(error)")
                 }
             }
         }

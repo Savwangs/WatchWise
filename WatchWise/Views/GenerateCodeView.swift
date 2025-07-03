@@ -190,7 +190,7 @@ struct GenerateCodeView: View {
                         .disabled(pairingManager.isLoading)
                         
                         // Manual navigation button (fallback)
-                        VStack(spacing: 8) {
+                        VStack(spacing: 16) {
                             Button(action: navigateToChildHome) {
                                 VStack(spacing: 4) {
                                     Text("Go to My Home Page")
@@ -206,8 +206,16 @@ struct GenerateCodeView: View {
                                 .background(Color.green)
                                 .cornerRadius(12)
                             }
+                            
+                            Button(action: regenerateCode) {
+                                Text("Generate New Code")
+                                    .font(.subheadline)
+                                    .foregroundColor(.blue)
+                            }
+                            .disabled(pairingManager.isLoading)
                         }
                         .padding(.top, 20)
+                        .padding(.bottom, 40) // Add bottom padding to ensure buttons are visible
                         
                     } else {
                         Spacer()
@@ -227,14 +235,11 @@ struct GenerateCodeView: View {
                         .background(Color.blue)
                         .cornerRadius(12)
                         .disabled(pairingManager.isLoading)
-                        Spacer()
+                        .padding(.bottom, 40) // Add bottom padding
                     }
                 }
                 .padding(.horizontal, 32)
-                Spacer()
             }
-            
-            Spacer()
         }
         .onDisappear {
             stopTimer()

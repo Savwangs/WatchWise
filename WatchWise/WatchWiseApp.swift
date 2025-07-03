@@ -12,7 +12,6 @@ import FirebaseFirestore
 import FirebaseMessaging
 import UserNotifications
 import BackgroundTasks
-import BackgroundTasks
 
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(
@@ -85,15 +84,6 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
         print("🔥 Failed to register for remote notifications: \(error.localizedDescription)")
-    }
-    
-    private func configureBackgroundTasks() {
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.watchwise.heartbeat", using: nil) { task in
-            // This will be handled by ActivityMonitoringManager
-            print("🔄 Background task received in AppDelegate")
-        }
-        
-        print("✅ Background tasks configured in AppDelegate")
     }
     
     private func configureBackgroundTasks() {
