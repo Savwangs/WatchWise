@@ -348,6 +348,7 @@ class DatabaseManager: ObservableObject {
         let detectionData: [String: Any] = [
             "appName": detection.appName,
             "bundleIdentifier": detection.bundleIdentifier,
+            "category": detection.category,
             "detectedAt": Timestamp(date: detection.detectedAt),
             "deviceId": detection.deviceId,
             "isNotified": false
@@ -388,6 +389,7 @@ class DatabaseManager: ObservableObject {
                     return NewAppDetection(
                         appName: appName,
                         bundleIdentifier: bundleIdentifier,
+                        category: data["category"] as? String ?? "Unknown",
                         detectedAt: detectedAt,
                         deviceId: deviceId
                     )

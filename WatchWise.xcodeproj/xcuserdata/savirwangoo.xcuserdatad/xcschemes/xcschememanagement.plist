@@ -14,8 +14,10 @@
 			<key>orderHint</key>
 			<integer>0</integer>
 		</dict>
-		<key>WatchWise Child.xcscheme_^#shared#^_</key>
+		<key>WatchWise Child.xcscheme</key>
 		<dict>
+			<key>isShown</key>
+			<false/>
 			<key>orderHint</key>
 			<integer>2</integer>
 		</dict>
@@ -23,6 +25,29 @@
 		<dict>
 			<key>orderHint</key>
 			<integer>1</integer>
+		</dict>
+	</dict>
+	<key>SuppressBuildableAutocreation</key>
+	<dict>
+		<key>E8AF1C462DEE9809001BA1D6</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>E8AF1C532DEE980B001BA1D6</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>E8AF1C5D2DEE980B001BA1D6</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>E8D413772E162F1E00F4ABAF</key>
+		<dict>
+			<key>primary</key>
+			<true/>
 		</dict>
 	</dict>
 </dict>

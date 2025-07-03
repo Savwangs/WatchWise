@@ -332,3 +332,29 @@ extension ChildDevice {
         )
     }
 }
+
+// MARK: - App Monitoring Models
+
+struct AppInfo: Identifiable, Codable {
+    let id = UUID()
+    let appName: String
+    let bundleIdentifier: String
+    let category: String
+    
+    enum CodingKeys: String, CodingKey {
+        case appName, bundleIdentifier, category
+    }
+}
+
+struct NewAppDetection: Identifiable, Codable {
+    let id = UUID()
+    let appName: String
+    let bundleIdentifier: String
+    let category: String
+    let detectedAt: Date
+    let deviceId: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case appName, bundleIdentifier, category, detectedAt, deviceId
+    }
+}

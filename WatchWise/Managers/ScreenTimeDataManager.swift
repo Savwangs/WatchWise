@@ -407,6 +407,7 @@ class ScreenTimeDataManager: ObservableObject {
             let detection = NewAppDetection(
                 appName: app.appName,
                 bundleIdentifier: app.bundleIdentifier,
+                category: app.category,
                 detectedAt: Date(),
                 deviceId: deviceId
             )
@@ -509,7 +510,7 @@ class ScreenTimeDataManager: ObservableObject {
             ("Google Classroom", "com.google.edu.googleclassroom")
         ]
         
-        return commonApps.map { AppInfo(appName: $0.0, bundleIdentifier: $0.1) }
+        return commonApps.map { AppInfo(appName: $0.0, bundleIdentifier: $0.1, category: "Unknown") }
     }
     
     private func loadKnownApps() {
@@ -688,17 +689,5 @@ class ScreenTimeDataManager: ObservableObject {
 }
 
 // MARK: - Supporting Models
-
-struct AppInfo {
-    let appName: String
-    let bundleIdentifier: String
-}
-
-struct NewAppDetection: Identifiable {
-    let id = UUID()
-    let appName: String
-    let bundleIdentifier: String
-    let detectedAt: Date
-    let deviceId: String
-}
+// AppInfo and NewAppDetection are now defined in DataModels.swift
 

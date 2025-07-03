@@ -36,20 +36,6 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		E80427172DFB753D00E405F0 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = E8AF1C3F2DEE9809001BA1D6 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = E80427092DFB753A00E405F0;
-			remoteInfo = "WatchWise Child";
-		};
-		E80427212DFB753D00E405F0 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = E8AF1C3F2DEE9809001BA1D6 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = E80427092DFB753A00E405F0;
-			remoteInfo = "WatchWise Child";
-		};
 		E8AF1C552DEE980B001BA1D6 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = E8AF1C3F2DEE9809001BA1D6 /* Project object */;
@@ -88,9 +74,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		E804270A2DFB753A00E405F0 /* WatchWise Child.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "WatchWise Child.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		E80427162DFB753D00E405F0 /* WatchWise ChildTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "WatchWise ChildTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		E80427202DFB753D00E405F0 /* WatchWise ChildUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "WatchWise ChildUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E8AF1C472DEE9809001BA1D6 /* WatchWise.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WatchWise.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E8AF1C542DEE980B001BA1D6 /* WatchWiseTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WatchWiseTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E8AF1C5E2DEE980B001BA1D6 /* WatchWiseUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WatchWiseUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -115,21 +98,6 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		E804270B2DFB753A00E405F0 /* WatchWise Child */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "WatchWise Child";
-			sourceTree = "<group>";
-		};
-		E80427192DFB753D00E405F0 /* WatchWise ChildTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "WatchWise ChildTests";
-			sourceTree = "<group>";
-		};
-		E80427232DFB753D00E405F0 /* WatchWise ChildUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "WatchWise ChildUITests";
-			sourceTree = "<group>";
-		};
 		E8AF1C492DEE9809001BA1D6 /* WatchWise */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -159,27 +127,6 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		E80427072DFB753A00E405F0 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		E80427132DFB753D00E405F0 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		E804271D2DFB753D00E405F0 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		E8AF1C442DEE9809001BA1D6 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -242,9 +189,6 @@
 				E8AF1C492DEE9809001BA1D6 /* WatchWise */,
 				E8AF1C572DEE980B001BA1D6 /* WatchWiseTests */,
 				E8AF1C612DEE980B001BA1D6 /* WatchWiseUITests */,
-				E804270B2DFB753A00E405F0 /* WatchWise Child */,
-				E80427192DFB753D00E405F0 /* WatchWise ChildTests */,
-				E80427232DFB753D00E405F0 /* WatchWise ChildUITests */,
 				E8D413792E162F1E00F4ABAF /* DeviceActivityReportExtension */,
 				E8AF1C482DEE9809001BA1D6 /* Products */,
 			);
@@ -256,9 +200,6 @@
 				E8AF1C472DEE9809001BA1D6 /* WatchWise.app */,
 				E8AF1C542DEE980B001BA1D6 /* WatchWiseTests.xctest */,
 				E8AF1C5E2DEE980B001BA1D6 /* WatchWiseUITests.xctest */,
-				E804270A2DFB753A00E405F0 /* WatchWise Child.app */,
-				E80427162DFB753D00E405F0 /* WatchWise ChildTests.xctest */,
-				E80427202DFB753D00E405F0 /* WatchWise ChildUITests.xctest */,
 				E8D413782E162F1E00F4ABAF /* DeviceActivityReportExtension.appex */,
 			);
 			name = Products;
@@ -267,74 +208,6 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		E80427092DFB753A00E405F0 /* WatchWise Child */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = E804272E2DFB753D00E405F0 /* Build configuration list for PBXNativeTarget "WatchWise Child" */;
-			buildPhases = (
-				E80427062DFB753A00E405F0 /* Sources */,
-				E80427072DFB753A00E405F0 /* Frameworks */,
-				E80427082DFB753A00E405F0 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				E804270B2DFB753A00E405F0 /* WatchWise Child */,
-			);
-			name = "WatchWise Child";
-			packageProductDependencies = (
-			);
-			productName = "WatchWise Child";
-			productReference = E804270A2DFB753A00E405F0 /* WatchWise Child.app */;
-			productType = "com.apple.product-type.application";
-		};
-		E80427152DFB753D00E405F0 /* WatchWise ChildTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = E804272F2DFB753D00E405F0 /* Build configuration list for PBXNativeTarget "WatchWise ChildTests" */;
-			buildPhases = (
-				E80427122DFB753D00E405F0 /* Sources */,
-				E80427132DFB753D00E405F0 /* Frameworks */,
-				E80427142DFB753D00E405F0 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				E80427182DFB753D00E405F0 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				E80427192DFB753D00E405F0 /* WatchWise ChildTests */,
-			);
-			name = "WatchWise ChildTests";
-			packageProductDependencies = (
-			);
-			productName = "WatchWise ChildTests";
-			productReference = E80427162DFB753D00E405F0 /* WatchWise ChildTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		E804271F2DFB753D00E405F0 /* WatchWise ChildUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = E80427302DFB753D00E405F0 /* Build configuration list for PBXNativeTarget "WatchWise ChildUITests" */;
-			buildPhases = (
-				E804271C2DFB753D00E405F0 /* Sources */,
-				E804271D2DFB753D00E405F0 /* Frameworks */,
-				E804271E2DFB753D00E405F0 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				E80427222DFB753D00E405F0 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				E80427232DFB753D00E405F0 /* WatchWise ChildUITests */,
-			);
-			name = "WatchWise ChildUITests";
-			packageProductDependencies = (
-			);
-			productName = "WatchWise ChildUITests";
-			productReference = E80427202DFB753D00E405F0 /* WatchWise ChildUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 		E8AF1C462DEE9809001BA1D6 /* WatchWise */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = E8AF1C682DEE980B001BA1D6 /* Build configuration list for PBXNativeTarget "WatchWise" */;
@@ -462,17 +335,6 @@
 				LastSwiftUpdateCheck = 1640;
 				LastUpgradeCheck = 1640;
 				TargetAttributes = {
-					E80427092DFB753A00E405F0 = {
-						CreatedOnToolsVersion = 16.4;
-					};
-					E80427152DFB753D00E405F0 = {
-						CreatedOnToolsVersion = 16.4;
-						TestTargetID = E80427092DFB753A00E405F0;
-					};
-					E804271F2DFB753D00E405F0 = {
-						CreatedOnToolsVersion = 16.4;
-						TestTargetID = E80427092DFB753A00E405F0;
-					};
 					E8AF1C462DEE9809001BA1D6 = {
 						CreatedOnToolsVersion = 16.4;
 					};
@@ -509,36 +371,12 @@
 				E8AF1C462DEE9809001BA1D6 /* WatchWise */,
 				E8AF1C532DEE980B001BA1D6 /* WatchWiseTests */,
 				E8AF1C5D2DEE980B001BA1D6 /* WatchWiseUITests */,
-				E80427092DFB753A00E405F0 /* WatchWise Child */,
-				E80427152DFB753D00E405F0 /* WatchWise ChildTests */,
-				E804271F2DFB753D00E405F0 /* WatchWise ChildUITests */,
 				E8D413772E162F1E00F4ABAF /* DeviceActivityReportExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		E80427082DFB753A00E405F0 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		E80427142DFB753D00E405F0 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		E804271E2DFB753D00E405F0 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		E8AF1C452DEE9809001BA1D6 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -570,27 +408,6 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		E80427062DFB753A00E405F0 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		E80427122DFB753D00E405F0 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		E804271C2DFB753D00E405F0 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		E8AF1C432DEE9809001BA1D6 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -622,16 +439,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		E80427182DFB753D00E405F0 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = E80427092DFB753A00E405F0 /* WatchWise Child */;
-			targetProxy = E80427172DFB753D00E405F0 /* PBXContainerItemProxy */;
-		};
-		E80427222DFB753D00E405F0 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = E80427092DFB753A00E405F0 /* WatchWise Child */;
-			targetProxy = E80427212DFB753D00E405F0 /* PBXContainerItemProxy */;
-		};
 		E8AF1C562DEE980B001BA1D6 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = E8AF1C462DEE9809001BA1D6 /* WatchWise */;
@@ -650,132 +457,6 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		E80427282DFB753D00E405F0 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "WatchWise Child/WatchWise Child.entitlements";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "WatchWise-Child-Info.plist";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.skw.WatchWise-Child";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		E80427292DFB753D00E405F0 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "WatchWise Child/WatchWise Child.entitlements";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "WatchWise-Child-Info.plist";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.skw.WatchWise-Child";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		E804272A2DFB753D00E405F0 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.skw.WatchWise-ChildTests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WatchWise Child.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WatchWise Child";
-			};
-			name = Debug;
-		};
-		E804272B2DFB753D00E405F0 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.skw.WatchWise-ChildTests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WatchWise Child.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/WatchWise Child";
-			};
-			name = Release;
-		};
-		E804272C2DFB753D00E405F0 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.skw.WatchWise-ChildUITests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = "WatchWise Child";
-			};
-			name = Debug;
-		};
-		E804272D2DFB753D00E405F0 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.skw.WatchWise-ChildUITests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = "WatchWise Child";
-			};
-			name = Release;
-		};
 		E8AF1C662DEE980B001BA1D6 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1082,33 +763,6 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		E804272E2DFB753D00E405F0 /* Build configuration list for PBXNativeTarget "WatchWise Child" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				E80427282DFB753D00E405F0 /* Debug */,
-				E80427292DFB753D00E405F0 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		E804272F2DFB753D00E405F0 /* Build configuration list for PBXNativeTarget "WatchWise ChildTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				E804272A2DFB753D00E405F0 /* Debug */,
-				E804272B2DFB753D00E405F0 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		E80427302DFB753D00E405F0 /* Build configuration list for PBXNativeTarget "WatchWise ChildUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				E804272C2DFB753D00E405F0 /* Debug */,
-				E804272D2DFB753D00E405F0 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		E8AF1C422DEE9809001BA1D6 /* Build configuration list for PBXProject "WatchWise" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -1161,8 +815,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 11.13.0;
+				kind = exactVersion;
+				version = 11.13.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

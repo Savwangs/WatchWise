@@ -163,21 +163,21 @@ class ScreenTimeMonitoringManager: ObservableObject {
         // In a real implementation, this would use DeviceActivityReport
         // For now, we'll simulate getting installed apps
         let commonApps = [
-            AppInfo(name: "Instagram", bundleIdentifier: "com.burbn.instagram", category: "Social Networking"),
-            AppInfo(name: "TikTok", bundleIdentifier: "com.zhiliaoapp.musically", category: "Entertainment"),
-            AppInfo(name: "YouTube", bundleIdentifier: "com.google.ios.youtube", category: "Entertainment"),
-            AppInfo(name: "Safari", bundleIdentifier: "com.apple.mobilesafari", category: "Productivity"),
-            AppInfo(name: "Messages", bundleIdentifier: "com.apple.MobileSMS", category: "Social Networking"),
-            AppInfo(name: "Snapchat", bundleIdentifier: "com.toyopagroup.picaboo", category: "Social Networking"),
-            AppInfo(name: "WhatsApp", bundleIdentifier: "net.whatsapp.WhatsApp", category: "Social Networking"),
-            AppInfo(name: "Discord", bundleIdentifier: "com.hammerandchisel.discord", category: "Social Networking"),
-            AppInfo(name: "Twitter", bundleIdentifier: "com.atebits.Tweetie2", category: "Social Networking"),
-            AppInfo(name: "Facebook", bundleIdentifier: "com.facebook.Facebook", category: "Social Networking"),
-            AppInfo(name: "Netflix", bundleIdentifier: "com.netflix.Netflix", category: "Entertainment"),
-            AppInfo(name: "Spotify", bundleIdentifier: "com.spotify.client", category: "Entertainment"),
-            AppInfo(name: "Minecraft", bundleIdentifier: "com.mojang.minecraftpe", category: "Games"),
-            AppInfo(name: "Roblox", bundleIdentifier: "com.roblox.client", category: "Games"),
-            AppInfo(name: "Fortnite", bundleIdentifier: "com.epicgames.fortnite", category: "Games")
+            AppInfo(appName: "Instagram", bundleIdentifier: "com.burbn.instagram", category: "Social Networking"),
+            AppInfo(appName: "TikTok", bundleIdentifier: "com.zhiliaoapp.musically", category: "Entertainment"),
+            AppInfo(appName: "YouTube", bundleIdentifier: "com.google.ios.youtube", category: "Entertainment"),
+            AppInfo(appName: "Safari", bundleIdentifier: "com.apple.mobilesafari", category: "Productivity"),
+            AppInfo(appName: "Messages", bundleIdentifier: "com.apple.MobileSMS", category: "Social Networking"),
+            AppInfo(appName: "Snapchat", bundleIdentifier: "com.toyopagroup.picaboo", category: "Social Networking"),
+            AppInfo(appName: "WhatsApp", bundleIdentifier: "net.whatsapp.WhatsApp", category: "Social Networking"),
+            AppInfo(appName: "Discord", bundleIdentifier: "com.hammerandchisel.discord", category: "Social Networking"),
+            AppInfo(appName: "Twitter", bundleIdentifier: "com.atebits.Tweetie2", category: "Social Networking"),
+            AppInfo(appName: "Facebook", bundleIdentifier: "com.facebook.Facebook", category: "Social Networking"),
+            AppInfo(appName: "Netflix", bundleIdentifier: "com.netflix.Netflix", category: "Entertainment"),
+            AppInfo(appName: "Spotify", bundleIdentifier: "com.spotify.client", category: "Entertainment"),
+            AppInfo(appName: "Minecraft", bundleIdentifier: "com.mojang.minecraftpe", category: "Games"),
+            AppInfo(appName: "Roblox", bundleIdentifier: "com.roblox.client", category: "Games"),
+            AppInfo(appName: "Fortnite", bundleIdentifier: "com.epicgames.fortnite", category: "Games")
         ]
         
         // Simulate some apps being newly installed
@@ -189,10 +189,11 @@ class ScreenTimeMonitoringManager: ObservableObject {
     private func processNewApps(_ newApps: [AppInfo]) async {
         for app in newApps {
             let detection = NewAppDetection(
-                appName: app.name,
+                appName: app.appName,
                 bundleIdentifier: app.bundleIdentifier,
                 category: app.category,
-                detectedAt: Date()
+                detectedAt: Date(),
+                deviceId: nil // Will be set when we have device context
             )
             
             await MainActor.run {
@@ -315,21 +316,4 @@ class ScreenTimeMonitoringManager: ObservableObject {
 }
 
 // MARK: - Supporting Models
-
-struct AppInfo {
-    let name: String
-    let bundleIdentifier: String
-    let category: String
-}
-
-struct NewAppDetection: Identifiable, Codable {
-    let id = UUID()
-    let appName: String
-    let bundleIdentifier: String
-    let category: String
-    let detectedAt: Date
-    
-    enum CodingKeys: String, CodingKey {
-        case appName, bundleIdentifier, category, detectedAt
-    }
-} 
+// AppInfo and NewAppDetection are now defined in DataModels.swift 
