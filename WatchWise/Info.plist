@@ -13,6 +13,8 @@
 		<string>com.watchwise.heartbeat</string>
 		<string>com.watchwise.monitoring</string>
 		<string>com.watchwise.deviceactivity</string>
+		<string>com.watchwise.dailyreset</string>
+		<string>com.watchwise.datasync</string>
 	</array>
 	<key>NSUserActivityTypes</key>
 	<array>

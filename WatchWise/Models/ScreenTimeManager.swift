@@ -20,13 +20,16 @@ class ScreenTimeManager: ObservableObject {
     
     private let db = Firestore.firestore()
     private let databaseManager = DatabaseManager.shared
+    private let deviceActivityManager = DeviceActivityDataManager()
     private var realtimeListeners: [String: ListenerRegistration] = [:]
     private var cacheManager = ScreenTimeCacheManager()
+    private var updateTimer: Timer?
     
     deinit {
         Task {
             await removeAllListeners()
         }
+        updateTimer?.invalidate()
     }
     
     // MARK: - Data Loading Methods
@@ -79,6 +82,26 @@ class ScreenTimeManager: ObservableObject {
     }
     
     private func loadScreenTimeForDevice(deviceId: String) async {
+        // First, try to get real-time data from DeviceActivityReport
+        if let realTimeData = deviceActivityManager.getCurrentScreenTimeData(for: deviceId) {
+            await MainActor.run {
+                self.todayScreenTime = realTimeData
+                self.isLoading = false
+                self.lastSyncTime = deviceActivityManager.lastUpdateTime ?? Date()
+                self.isOffline = false
+                self.errorMessage = deviceActivityManager.errorMessage
+            }
+            
+            // Cache the real-time data
+            await cacheManager.cacheScreenTimeData(realTimeData, for: deviceId)
+            
+            // Start real-time updates
+            startRealTimeUpdates(for: deviceId)
+            
+            return
+        }
+        
+        // Fallback to Firebase data if no real-time data available
         do {
             let screenTimeData = try await withCheckedThrowingContinuation { continuation in
                 databaseManager.getScreenTimeData(for: deviceId, date: Date()) { result in
@@ -133,6 +156,33 @@ class ScreenTimeManager: ObservableObject {
     }
     
     // MARK: - Real-time Updates
+    private func startRealTimeUpdates(for deviceId: String) {
+        // Stop existing timer
+        updateTimer?.invalidate()
+        
+        // Start periodic updates every 30 seconds to check for new DeviceActivityReport data
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self else { return }
+                
+                // Check for new data from DeviceActivityReport
+                if let newData = self.deviceActivityManager.getCurrentScreenTimeData(for: deviceId) {
+                    self.todayScreenTime = newData
+                    self.lastSyncTime = self.deviceActivityManager.lastUpdateTime ?? Date()
+                    self.errorMessage = self.deviceActivityManager.errorMessage
+                    
+                    // Cache the updated data
+                    await self.cacheManager.cacheScreenTimeData(newData, for: deviceId)
+                    
+                    // Sync to Firebase in background
+                    if let parentId = Auth.auth().currentUser?.uid {
+                        await self.deviceActivityManager.syncDataToFirebase(for: deviceId, parentId: parentId)
+                    }
+                }
+            }
+        }
+    }
+    
     private func setupRealtimeUpdates(for deviceId: String) async {
         // Remove existing listener for this device
         realtimeListeners[deviceId]?.remove()

@@ -59,6 +59,12 @@ struct DashboardView: View {
                     // Data Display
                     else if let screenTimeData = screenTimeManager.todayScreenTime {
                         DataDisplayView(screenTimeData: screenTimeData)
+                        
+                        // Real-time Status
+                        RealTimeStatusView()
+                        
+                        // Daily Reset Info
+                        DailyResetInfoView()
                     }
                 }
                 .padding(.bottom, 100) // Tab bar clearance
@@ -576,9 +582,9 @@ struct AppUsageTimelineCard: View {
                     .padding()
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 12) {
+                    LazyVStack(spacing: 16) {
                         ForEach(appsWithRanges, id: \.bundleIdentifier) { app in
-                            AppTimelineItem(
+                            AppTimelineRow(
                                 app: app,
                                 color: appColors[app.appName] ?? .gray,
                                 onTap: {
@@ -590,7 +596,7 @@ struct AppUsageTimelineCard: View {
                     }
                     .padding(.horizontal)
                 }
-                .frame(maxHeight: 300)
+                .frame(maxHeight: 400)
             }
         }
         .padding()
@@ -605,47 +611,82 @@ struct AppUsageTimelineCard: View {
     }
 }
 
-// MARK: - App Timeline Item
-struct AppTimelineItem: View {
+// MARK: - App Timeline Row
+struct AppTimelineRow: View {
     let app: AppUsage
     let color: Color
     let onTap: () -> Void
     
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 12) {
-                // App Icon/Color
-                Circle()
-                    .fill(color)
-                    .frame(width: 40, height: 40)
-                    .overlay(
-                        Image(systemName: "app.fill")
-                            .foregroundColor(.white)
-                            .font(.system(size: 16))
-                    )
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(app.appName)
-                        .font(.headline)
-                        .foregroundColor(.primary)
+            VStack(alignment: .leading, spacing: 12) {
+                // App Header
+                HStack(spacing: 12) {
+                    // App Icon/Color
+                    Circle()
+                        .fill(color)
+                        .frame(width: 40, height: 40)
+                        .overlay(
+                            Image(systemName: "app.fill")
+                                .foregroundColor(.white)
+                                .font(.system(size: 16))
+                        )
                     
-                    Text("Total: \(formatDuration(app.duration))")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    
-                    // Show first usage range if available
-                    if let firstRange = app.usageRanges?.first {
-                        Text("Last session: \(firstRange.formattedRange)")
-                            .font(.caption)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(app.appName)
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        
+                        Text("Total: \(formatDuration(app.duration))")
+                            .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.secondary)
+                        .font(.caption)
                 }
                 
-                Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .foregroundColor(.secondary)
-                    .font(.caption)
+                // Visual Timeline
+                if let usageRanges = app.usageRanges, !usageRanges.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        // Time labels
+                        HStack {
+                            Text("6 AM")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("12 PM")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("6 PM")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("12 AM")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        // Timeline bar
+                        ZStack(alignment: .leading) {
+                            // Background timeline
+                            Rectangle()
+                                .fill(Color(.systemGray5))
+                                .frame(height: 20)
+                                .cornerRadius(10)
+                            
+                            // Usage segments
+                            ForEach(usageRanges, id: \.sessionId) { range in
+                                TimelineSegment(range: range, color: color)
+                            }
+                        }
+                        .frame(height: 20)
+                    }
+                }
             }
             .padding()
             .background(Color(.systemBackground))
@@ -664,6 +705,30 @@ struct AppTimelineItem: View {
         } else {
             return "\(minutes)m"
         }
+    }
+}
+
+// MARK: - Timeline Segment
+struct TimelineSegment: View {
+    let range: AppUsageRange
+    let color: Color
+    
+    var body: some View {
+        let startHour = Calendar.current.component(.hour, from: range.startTime)
+        let startMinute = Calendar.current.component(.minute, from: range.startTime)
+        let endHour = Calendar.current.component(.hour, from: range.endTime)
+        let endMinute = Calendar.current.component(.minute, from: range.endTime)
+        
+        // Calculate position and width (18 hours from 6 AM to 12 AM)
+        let startPosition = max(0, (Double(startHour) - 6.0 + Double(startMinute) / 60.0) / 18.0)
+        let endPosition = min(1.0, (Double(endHour) - 6.0 + Double(endMinute) / 60.0) / 18.0)
+        let width = endPosition - startPosition
+        
+        Rectangle()
+            .fill(color)
+            .frame(width: max(4, UIScreen.main.bounds.width * 0.7 * width))
+            .offset(x: UIScreen.main.bounds.width * 0.35 * startPosition)
+            .cornerRadius(8)
     }
 }
 
@@ -712,9 +777,42 @@ struct AppDetailView: View {
                                 .padding(.horizontal)
                             
                             LazyVStack(spacing: 8) {
-                                ForEach(usageRanges, id: \.sessionId) { range in
+                                ForEach(usageRanges.sorted { $0.startTime > $1.startTime }, id: \.sessionId) { range in
                                     UsageSessionRow(range: range)
                                 }
+                            }
+                            
+                            // Session Summary
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Session Summary")
+                                    .font(.headline)
+                                    .padding(.horizontal)
+                                
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Total Sessions")
+                                            .font(.subheadline)
+                                            .foregroundColor(.secondary)
+                                        Text("\(usageRanges.count)")
+                                            .font(.title2)
+                                            .fontWeight(.bold)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    VStack(alignment: .trailing, spacing: 4) {
+                                        Text("Average Session")
+                                            .font(.subheadline)
+                                            .foregroundColor(.secondary)
+                                        Text(formatDuration(app.duration / Double(usageRanges.count)))
+                                            .font(.title2)
+                                            .fontWeight(.bold)
+                                    }
+                                }
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
+                                .padding(.horizontal)
                             }
                         }
                     } else {
@@ -823,6 +921,109 @@ struct DataInfoCard: View {
         .background(Color(.systemBlue).opacity(0.1))
         .cornerRadius(8)
         .padding(.horizontal)
+    }
+}
+
+// MARK: - Real-time Status View
+struct RealTimeStatusView: View {
+    @StateObject private var deviceActivityManager = DeviceActivityDataManager()
+    @State private var isDataStale = false
+    
+    var body: some View {
+        HStack {
+            Image(systemName: isDataStale ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .foregroundColor(isDataStale ? .orange : .green)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Real-time Monitoring")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                Text(isDataStale ? "Data may be stale" : "Data updates in background")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            if let lastUpdate = deviceActivityManager.lastUpdateTime {
+                Text("Updated \(formatTimeAgo(lastUpdate))")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(isDataStale ? .orange : .green)
+            }
+        }
+        .padding()
+        .background(Color(isDataStale ? .systemOrange : .systemGreen).opacity(0.1))
+        .cornerRadius(8)
+        .padding(.horizontal)
+        .onAppear {
+            checkDataStatus()
+        }
+        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
+            checkDataStatus()
+        }
+    }
+    
+    private func checkDataStatus() {
+        isDataStale = deviceActivityManager.isDataStale()
+    }
+    
+    private func formatTimeAgo(_ date: Date) -> String {
+        let timeInterval = Date().timeIntervalSince(date)
+        
+        if timeInterval < 60 {
+            return "just now"
+        } else if timeInterval < 3600 {
+            let minutes = Int(timeInterval / 60)
+            return "\(minutes)m ago"
+        } else {
+            let hours = Int(timeInterval / 3600)
+            return "\(hours)h ago"
+        }
+    }
+}
+
+// MARK: - Daily Reset Info View
+struct DailyResetInfoView: View {
+    var body: some View {
+        HStack {
+            Image(systemName: "arrow.clockwise.circle.fill")
+                .foregroundColor(.green)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Daily Reset")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                Text("Screen time resets daily at midnight")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            Text(timeUntilReset)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.green)
+        }
+        .padding()
+        .background(Color(.systemGreen).opacity(0.1))
+        .cornerRadius(8)
+        .padding(.horizontal)
+    }
+    
+    private var timeUntilReset: String {
+        let calendar = Calendar.current
+        let now = Date()
+        let tomorrow = calendar.startOfDay(for: calendar.date(byAdding: .day, value: 1, to: now) ?? now)
+        let timeInterval = tomorrow.timeIntervalSince(now)
+        
+        let hours = Int(timeInterval) / 3600
+        let minutes = Int(timeInterval) % 3600 / 60
+        
+        return "\(hours)h \(minutes)m"
     }
 }
 

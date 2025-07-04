@@ -168,6 +168,7 @@ struct WatchWiseApp: App {
     @StateObject private var databaseManager = DatabaseManager.shared
     @StateObject private var activityMonitoringManager = ActivityMonitoringManager.shared
     @StateObject private var notificationManager = NotificationManager.shared
+    @StateObject private var networkMonitor = NetworkMonitor.shared
     
     var body: some Scene {
         WindowGroup {
@@ -176,6 +177,7 @@ struct WatchWiseApp: App {
                 .environmentObject(databaseManager)
                 .environmentObject(activityMonitoringManager)
                 .environmentObject(notificationManager)
+                .environmentObject(networkMonitor)
                 .onAppear {
                     setupAppearance()
                     setupActivityMonitoring()
@@ -190,6 +192,9 @@ struct WatchWiseApp: App {
             // For now, we'll start monitoring for all users
             activityMonitoringManager.startMonitoring()
             notificationManager.startListeningForNotifications()
+            
+            // Start background processing
+            BackgroundTaskManager.shared.startBackgroundProcessing()
         }
     }
     
