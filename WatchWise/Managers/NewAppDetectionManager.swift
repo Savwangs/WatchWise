@@ -11,7 +11,7 @@ import FirebaseAuth
 
 @MainActor
 class NewAppDetectionManager: ObservableObject {
-    @Published var newAppDetections: [NewAppDetection] = []
+    @Published var newAppDetections: [WatchWise.NewAppDetection] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
     
@@ -41,14 +41,14 @@ class NewAppDetectionManager: ObservableObject {
         do {
             for bundleId in newAppBundleIds {
                 // Check if we already processed this app
-                if !newAppDetections.contains(where: { $0.bundleId == bundleId }) {
+                if !newAppDetections.contains(where: { $0.bundleIdentifier == bundleId }) {
                     let appName = getAppName(for: bundleId)
-                    let detection = NewAppDetection(
-                        bundleId: bundleId,
+                    let detection = WatchWise.NewAppDetection(
                         appName: appName,
+                        bundleIdentifier: bundleId,
+                        category: "Unknown",
                         detectedAt: Date(),
-                        parentId: currentUser.uid,
-                        isProcessed: false
+                        deviceId: nil
                     )
                     
                     // Save to Firebase
@@ -75,7 +75,7 @@ class NewAppDetectionManager: ObservableObject {
         isLoading = false
     }
     
-    func addAppToMonitoring(_ detection: NewAppDetection) async {
+    func addAppToMonitoring(_ detection: WatchWise.NewAppDetection) async {
         guard let currentUser = Auth.auth().currentUser else {
             errorMessage = "Authentication required"
             return
@@ -84,7 +84,7 @@ class NewAppDetectionManager: ObservableObject {
         do {
             // Create default app restriction (2 hours limit)
             let restriction = AppRestriction(
-                bundleId: detection.bundleId,
+                bundleId: detection.bundleIdentifier,
                 timeLimit: 2.0 * 3600.0, // 2 hours in seconds
                 isDisabled: false,
                 dailyUsage: 0,
@@ -94,7 +94,7 @@ class NewAppDetectionManager: ObservableObject {
             
             // Save restriction to Firebase
             try await db.collection("appRestrictions")
-                .document("\(currentUser.uid)_\(detection.bundleId)")
+                .document("\(currentUser.uid)_\(detection.bundleIdentifier)")
                 .setData([
                     "bundleId": restriction.bundleId,
                     "timeLimit": restriction.timeLimit,
@@ -108,10 +108,8 @@ class NewAppDetectionManager: ObservableObject {
             // Mark detection as processed
             try await markDetectionAsProcessed(detection)
             
-            // Update local state
-            if let index = newAppDetections.firstIndex(where: { $0.id == detection.id }) {
-                newAppDetections[index].isProcessed = true
-            }
+            // Update local state - remove from list since it's processed
+            newAppDetections.removeAll(where: { $0.id == detection.id })
             
             print("✅ Added \(detection.appName) to monitoring")
             
@@ -121,15 +119,13 @@ class NewAppDetectionManager: ObservableObject {
         }
     }
     
-    func ignoreNewApp(_ detection: NewAppDetection) async {
+    func ignoreNewApp(_ detection: WatchWise.NewAppDetection) async {
         do {
             // Mark detection as processed (ignored)
             try await markDetectionAsProcessed(detection)
             
-            // Update local state
-            if let index = newAppDetections.firstIndex(where: { $0.id == detection.id }) {
-                newAppDetections[index].isProcessed = true
-            }
+            // Update local state - remove from list since it's processed
+            newAppDetections.removeAll(where: { $0.id == detection.id })
             
             print("❌ Ignored new app: \(detection.appName)")
             
@@ -148,12 +144,11 @@ class NewAppDetectionManager: ObservableObject {
             do {
                 let snapshot = try await db.collection("newAppDetections")
                     .whereField("parentId", isEqualTo: currentUser.uid)
-                    .whereField("isProcessed", isEqualTo: false)
                     .order(by: "detectedAt", descending: true)
                     .getDocuments()
                 
-                let detections = try snapshot.documents.compactMap { document -> NewAppDetection? in
-                    try document.data(as: NewAppDetection.self)
+                let detections = try snapshot.documents.compactMap { document -> WatchWise.NewAppDetection? in
+                    try document.data(as: WatchWise.NewAppDetection.self)
                 }
                 
                 await MainActor.run {
@@ -166,37 +161,38 @@ class NewAppDetectionManager: ObservableObject {
         }
     }
     
-    private func saveNewAppDetection(_ detection: NewAppDetection) async throws {
+    private func saveNewAppDetection(_ detection: WatchWise.NewAppDetection) async throws {
         let data: [String: Any] = [
-            "bundleId": detection.bundleId,
+            "bundleIdentifier": detection.bundleIdentifier,
             "appName": detection.appName,
+            "category": detection.category,
             "detectedAt": Timestamp(date: detection.detectedAt),
-            "parentId": detection.parentId,
-            "isProcessed": detection.isProcessed
+            "deviceId": detection.deviceId ?? "",
+            "parentId": Auth.auth().currentUser?.uid ?? ""
         ]
         
         try await db.collection("newAppDetections")
-            .document("\(detection.parentId)_\(detection.bundleId)")
+            .document("\(Auth.auth().currentUser?.uid ?? "")_\(detection.bundleIdentifier)")
             .setData(data, merge: true)
     }
     
-    private func markDetectionAsProcessed(_ detection: NewAppDetection) async throws {
+    private func markDetectionAsProcessed(_ detection: WatchWise.NewAppDetection) async throws {
         try await db.collection("newAppDetections")
-            .document("\(detection.parentId)_\(detection.bundleId)")
+            .document("\(Auth.auth().currentUser?.uid ?? "")_\(detection.bundleIdentifier)")
             .updateData([
                 "isProcessed": true,
                 "processedAt": Timestamp()
             ])
     }
     
-    private func sendNewAppNotification(_ detection: NewAppDetection) async {
+    private func sendNewAppNotification(_ detection: WatchWise.NewAppDetection) async {
         do {
             try await db.collection("notifications").addDocument(data: [
-                "parentId": detection.parentId,
+                "parentId": Auth.auth().currentUser?.uid ?? "",
                 "type": "new_app_detected",
                 "title": "New App Detected",
                 "message": "\(detection.appName) has been installed on your child's device",
-                "bundleId": detection.bundleId,
+                "bundleIdentifier": detection.bundleIdentifier,
                 "timestamp": Timestamp(),
                 "isRead": false,
                 "data": [
@@ -248,16 +244,4 @@ class NewAppDetectionManager: ObservableObject {
     }
 }
 
-// MARK: - New App Detection Model
-struct NewAppDetection: Codable, Identifiable {
-    let id = UUID()
-    let bundleId: String
-    let appName: String
-    let detectedAt: Date
-    let parentId: String
-    var isProcessed: Bool
-    
-    enum CodingKeys: String, CodingKey {
-        case bundleId, appName, detectedAt, parentId, isProcessed
-    }
-} 
+ 

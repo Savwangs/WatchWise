@@ -191,7 +191,7 @@ struct WatchWiseApp: App {
             // Check if this is a child device (you can add logic to determine user type)
             // For now, we'll start monitoring for all users
             activityMonitoringManager.startMonitoring()
-            notificationManager.startListeningForNotifications()
+            notificationManager.connect(userId: currentUser.uid)
             
             // Start background processing
             BackgroundTaskManager.shared.startBackgroundProcessing()

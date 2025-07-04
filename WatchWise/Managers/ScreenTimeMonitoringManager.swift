@@ -15,7 +15,7 @@ import FirebaseFirestore
 class ScreenTimeMonitoringManager: ObservableObject {
     @Published var isMonitoring = false
     @Published var lastActivityUpdate = Date()
-    @Published var detectedNewApps: [NewAppDetection] = []
+    @Published var detectedNewApps: [WatchWise.NewAppDetection] = []
     @Published var errorMessage: String?
     
     private let deviceActivityCenter = DeviceActivityCenter()
@@ -188,7 +188,7 @@ class ScreenTimeMonitoringManager: ObservableObject {
     
     private func processNewApps(_ newApps: [AppInfo]) async {
         for app in newApps {
-            let detection = NewAppDetection(
+            let detection = WatchWise.NewAppDetection(
                 appName: app.appName,
                 bundleIdentifier: app.bundleIdentifier,
                 category: app.category,
@@ -208,7 +208,7 @@ class ScreenTimeMonitoringManager: ObservableObject {
         }
     }
     
-    private func saveNewAppDetection(_ detection: NewAppDetection) async {
+    private func saveNewAppDetection(_ detection: WatchWise.NewAppDetection) async {
         do {
             let data: [String: Any] = [
                 "appName": detection.appName,
@@ -226,7 +226,7 @@ class ScreenTimeMonitoringManager: ObservableObject {
         }
     }
     
-    private func notifyParentOfNewApp(_ detection: NewAppDetection) async {
+    private func notifyParentOfNewApp(_ detection: WatchWise.NewAppDetection) async {
         // This would integrate with your notification system
         // For now, we'll just log it
         print("🔔 New app detected: \(detection.appName) (\(detection.bundleIdentifier))")

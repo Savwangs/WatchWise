@@ -20,7 +20,7 @@ class ScreenTimeDataManager: ObservableObject {
     @Published var isLoading = false
     @Published var currentScreenTimeData: ScreenTimeData?
     @Published var errorMessage: String?
-    @Published var detectedNewApps: [NewAppDetection] = []
+    @Published var detectedNewApps: [WatchWise.NewAppDetection] = []
     @Published var isMonitoring = false
     
     private let authorizationCenter = AuthorizationCenter.shared
@@ -456,13 +456,13 @@ class ScreenTimeDataManager: ObservableObject {
         guard let deviceId = currentDeviceId else { return }
         
         for app in newApps {
-            let detection = NewAppDetection(
-                appName: app.appName,
-                bundleIdentifier: app.bundleIdentifier,
-                category: app.category,
-                detectedAt: Date(),
-                deviceId: deviceId
-            )
+                                let detection = WatchWise.NewAppDetection(
+                        appName: app.appName,
+                        bundleIdentifier: app.bundleIdentifier,
+                        category: app.category,
+                        detectedAt: Date(),
+                        deviceId: deviceId
+                    )
             
             await MainActor.run {
                 self.detectedNewApps.append(detection)
@@ -476,7 +476,7 @@ class ScreenTimeDataManager: ObservableObject {
         }
     }
     
-    private func saveNewAppDetection(_ detection: NewAppDetection) async {
+    private func saveNewAppDetection(_ detection: WatchWise.NewAppDetection) async {
         do {
             let data: [String: Any] = [
                 "appName": detection.appName,
@@ -495,7 +495,7 @@ class ScreenTimeDataManager: ObservableObject {
         }
     }
     
-    private func notifyParentOfNewApp(_ detection: NewAppDetection) async {
+    private func notifyParentOfNewApp(_ detection: WatchWise.NewAppDetection) async {
         guard let currentUser = Auth.auth().currentUser else { return }
         
         do {

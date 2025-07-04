@@ -13,8 +13,8 @@ struct DashboardView: View {
     @StateObject private var screenTimeManager = ScreenTimeManager()
     @StateObject private var pairingManager = PairingManager.shared
     @StateObject private var appRestrictionManager = AppRestrictionManager()
-    @StateObject private var notificationManager = NotificationManager()
-    @StateObject private var messagingManager = MessagingManager()
+    @StateObject private var notificationManager = NotificationManager.shared
+    @StateObject private var messagingManager = MessagingManager.shared
     @StateObject private var appDeletionManager = AppDeletionManager()
     @StateObject private var heartbeatManager = HeartbeatManager()
     @State private var showingError = false
@@ -1243,7 +1243,7 @@ struct DevicePickerView: View {
 
 // MARK: - Notifications Card
 struct NotificationsCard: View {
-    @StateObject private var notificationManager = NotificationManager()
+    @StateObject private var notificationManager = NotificationManager.shared
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1307,7 +1307,7 @@ struct NotificationsCard: View {
 
 // MARK: - Messages Card
 struct MessagesCard: View {
-    @StateObject private var messagingManager = MessagingManager()
+    @StateObject private var messagingManager = MessagingManager.shared
     @EnvironmentObject var authManager: AuthenticationManager
     
     var body: some View {

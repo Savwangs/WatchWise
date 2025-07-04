@@ -119,11 +119,7 @@ struct DeviceManagementView: View {
                     await loadDevices()
                 }
             }
-            .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
-                Task {
-                    await pairingManager.loadPairedChildren()
-                }
-            }
+
         }
     }
     
@@ -144,22 +140,21 @@ struct DeviceManagementView: View {
         
         await MainActor.run {
             isLoading = false
+        }
+        
+        switch result {
+        case .success:
+            // Send a system alert notification
+            await notificationManager.sendSystemAlertNotification(
+                title: "Device Unlinked",
+                message: "\(device.childName)'s device has been successfully unlinked."
+            )
             
-            switch result {
-            case .success:
-                notificationManager.scheduleLocalNotification(
-                    title: "Device Unlinked",
-                    body: "\(device.childName)'s device has been successfully unlinked.",
-                    timeInterval: 1
-                )
-                
-            case .failure(let error):
-                notificationManager.scheduleLocalNotification(
-                    title: "Unlink Failed",
-                    body: "Failed to unlink \(device.childName)'s device: \(error.localizedDescription)",
-                    timeInterval: 1
-                )
-            }
+        case .failure(let error):
+            await notificationManager.sendSystemAlertNotification(
+                title: "Unlink Failed",
+                message: "Failed to unlink \(device.childName)'s device: \(error.localizedDescription)"
+            )
         }
     }
 }

@@ -541,14 +541,4 @@ class CachedScreenTimeData {
     }
 }
 
-// MARK: - Network Monitor
-class NetworkMonitor: ObservableObject {
-    static let shared = NetworkMonitor()
-    @Published var isConnected = true
-    
-    private init() {
-        // In a real app, you would implement actual network monitoring
-        // For now, we'll assume connected
-        isConnected = true
-    }
-}
+

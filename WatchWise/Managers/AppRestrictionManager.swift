@@ -266,7 +266,7 @@ class AppRestrictionManager: ObservableObject {
         }
         
         // Update Firebase
-        await saveRestrictionToFirebase(restriction)
+        try? await saveRestrictionToFirebase(restriction)
         currentRestrictions[bundleId] = restriction
     }
     
@@ -491,7 +491,7 @@ struct AppRestriction: Codable, Identifiable {
     let timeLimit: TimeInterval // in seconds
     var isDisabled: Bool
     var dailyUsage: TimeInterval // in seconds
-    let lastResetDate: Date
+    var lastResetDate: Date
     let parentId: String
     
     enum CodingKeys: String, CodingKey {

@@ -13,6 +13,8 @@ import UIKit
 
 @MainActor
 class NotificationManager: ObservableObject {
+    static let shared = NotificationManager()
+    
     @Published var notifications: [AppNotification] = []
     @Published var unreadCount = 0
     @Published var isLoading = false
@@ -21,8 +23,12 @@ class NotificationManager: ObservableObject {
     private let db = Firestore.firestore()
     private var notificationListener: ListenerRegistration?
     
+    private init() {}
+    
     deinit {
-        disconnect()
+        Task { @MainActor in
+            disconnect()
+        }
     }
     
     // MARK: - Setup & Connection
@@ -408,7 +414,7 @@ class NotificationManager: ObservableObject {
             message: "\(childName) used their device for \(timeString) today",
             data: [
                 "childName": childName,
-                "totalTime": totalTime
+                "totalTime": String(Int(totalTime))
             ],
             timestamp: Date(),
             isRead: false
@@ -431,8 +437,26 @@ class NotificationManager: ObservableObject {
             data: [
                 "childUserId": childUserId,
                 "childName": childName,
-                "offlineSince": Date().timeIntervalSince1970
+                "offlineSince": String(Int(Date().timeIntervalSince1970))
             ],
+            timestamp: Date(),
+            isRead: false
+        )
+        
+        await sendNotification(notification)
+    }
+    
+    func sendSystemAlertNotification(
+        title: String,
+        message: String
+    ) async {
+        let notification = AppNotification(
+            id: UUID().uuidString,
+            recipientId: Auth.auth().currentUser?.uid ?? "",
+            type: .systemAlert,
+            title: title,
+            message: message,
+            data: [:],
             timestamp: Date(),
             isRead: false
         )
@@ -531,7 +555,7 @@ struct AppNotification: Codable, Identifiable {
     let type: NotificationType
     let title: String
     let message: String
-    let data: [String: Any]
+    let data: [String: String]
     let timestamp: Date
     var isRead: Bool
     var readAt: Date?

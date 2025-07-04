@@ -11,7 +11,7 @@ import Foundation
 
 struct ChildMessagesView: View {
     @EnvironmentObject var authManager: AuthenticationManager
-    @StateObject private var messagingManager = MessagingManager()
+    @StateObject private var messagingManager = MessagingManager.shared
     @StateObject private var pairingManager = PairingManager.shared
     
     @State private var messageText = ""
@@ -81,16 +81,16 @@ struct ChildMessagesView: View {
             }
             
             // Parent selector (if multiple parents)
-            if !pairingManager.pairedParents.isEmpty {
+            if !pairingManager.pairedChildren.isEmpty {
                 HStack {
                     Text("Chat with:")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     
                     Picker("Select Parent", selection: $selectedParentId) {
-                        ForEach(pairingManager.pairedParents, id: \.parentUserId) { parent in
-                            Text(parent.parentName)
-                                .tag(Optional(parent.parentUserId))
+                        ForEach(pairingManager.pairedChildren, id: \.parentId) { child in
+                            Text("Parent") // For child users, we show "Parent" since we don't have parent names
+                                .tag(Optional(child.parentId))
                         }
                     }
                     .pickerStyle(MenuPickerStyle())
@@ -214,7 +214,7 @@ struct ChildMessagesView: View {
     
     private func setupMessaging() {
         guard let currentUser = authManager.currentUser,
-              let parentId = selectedParentId ?? pairingManager.pairedParents.first?.parentUserId else {
+              let parentId = selectedParentId ?? pairingManager.pairedChildren.first?.parentId else {
             return
         }
         
@@ -223,7 +223,7 @@ struct ChildMessagesView: View {
     
     private func sendMessage() {
         guard let currentUser = authManager.currentUser,
-              let parentId = selectedParentId ?? pairingManager.pairedParents.first?.parentUserId,
+              let parentId = selectedParentId ?? pairingManager.pairedChildren.first?.parentId,
               !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return
         }
@@ -241,7 +241,7 @@ struct ChildMessagesView: View {
     
     private func handleTyping() {
         guard let currentUser = authManager.currentUser,
-              let parentId = selectedParentId ?? pairingManager.pairedParents.first?.parentUserId else {
+              let parentId = selectedParentId ?? pairingManager.pairedChildren.first?.parentId else {
             return
         }
         
@@ -262,7 +262,7 @@ struct ChildMessagesView: View {
     
     private func stopTyping() {
         guard let currentUser = authManager.currentUser,
-              let parentId = selectedParentId ?? pairingManager.pairedParents.first?.parentUserId else {
+              let parentId = selectedParentId ?? pairingManager.pairedChildren.first?.parentId else {
             return
         }
         

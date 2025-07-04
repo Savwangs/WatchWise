@@ -10,7 +10,7 @@ import FirebaseFirestore
 
 struct NotificationsView: View {
     @EnvironmentObject var authManager: AuthenticationManager
-    @StateObject private var notificationManager = NotificationManager()
+    @StateObject private var notificationManager = NotificationManager.shared
     @StateObject private var appDeletionManager = AppDeletionManager()
     
     @State private var selectedFilter: NotificationType?

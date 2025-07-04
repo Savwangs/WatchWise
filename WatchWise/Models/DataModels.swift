@@ -266,9 +266,14 @@ struct DeviceInfo: Codable {
     let appVersion: String
     let lastSyncAt: Timestamp
     var isOnline: Bool
+    let deviceName: String
+    let osVersion: String
+    let batteryLevel: Double
+    let isCharging: Bool
+    let networkStatus: String
     
     enum CodingKeys: String, CodingKey {
-        case deviceModel, systemVersion, appVersion, lastSyncAt, isOnline
+        case deviceModel, systemVersion, appVersion, lastSyncAt, isOnline, deviceName, osVersion, batteryLevel, isCharging, networkStatus
     }
 }
 
@@ -300,4 +305,44 @@ struct NewAppDetection: Identifiable, Codable {
     enum CodingKeys: String, CodingKey {
         case appName, bundleIdentifier, category, detectedAt, deviceId
     }
+}
+
+// MARK: - Messaging Models
+
+struct Message: Codable, Identifiable {
+    let id: String
+    let text: String
+    let senderId: String
+    let receiverId: String
+    let timestamp: Date
+    let messageType: MessageType
+    var isRead: Bool
+    let senderType: SenderType
+    var readAt: Date?
+    
+    enum CodingKeys: String, CodingKey {
+        case id, text, senderId, receiverId, timestamp, messageType, isRead, senderType, readAt
+    }
+    
+    var formattedTimestamp: String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: timestamp, relativeTo: Date())
+    }
+    
+    var isFromParent: Bool {
+        return senderType == .parent
+    }
+}
+
+enum MessageType: String, Codable, CaseIterable {
+    case text = "text"
+    case image = "image"
+    case system = "system"
+}
+
+enum SenderType: String, Codable, CaseIterable {
+    case parent = "parent"
+    case child = "child"
+    case system = "system"
 }

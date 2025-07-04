@@ -396,7 +396,7 @@ class DatabaseManager: ObservableObject {
     
     // MARK: - New App Detection
     
-    func saveNewAppDetection(_ detection: NewAppDetection, completion: @escaping (Result<Void, Error>) -> Void) {
+    func saveNewAppDetection(_ detection: WatchWise.NewAppDetection, completion: @escaping (Result<Void, Error>) -> Void) {
         let detectionData: [String: Any] = [
             "appName": detection.appName,
             "bundleIdentifier": detection.bundleIdentifier,
@@ -417,7 +417,7 @@ class DatabaseManager: ObservableObject {
         }
     }
     
-    func getNewAppDetections(for deviceId: String, completion: @escaping (Result<[NewAppDetection], Error>) -> Void) {
+    func getNewAppDetections(for deviceId: String, completion: @escaping (Result<[WatchWise.NewAppDetection], Error>) -> Void) {
         FirebaseManager.shared.db.collection("newAppDetections")
             .whereField("deviceId", isEqualTo: deviceId)
             .order(by: "detectedAt", descending: true)
@@ -425,11 +425,11 @@ class DatabaseManager: ObservableObject {
             .getDocuments { snapshot, error in
                 if let error = error {
                     print("🔥 Error fetching new app detections: \(error)")
-                    completion(.failure(error))
+                    completion(Result<[WatchWise.NewAppDetection], Error>.failure(error))
                     return
                 }
                 
-                let detections = snapshot?.documents.compactMap { document -> NewAppDetection? in
+                let detections = snapshot?.documents.compactMap { document -> WatchWise.NewAppDetection? in
                     let data = document.data()
                     guard let appName = data["appName"] as? String,
                           let bundleIdentifier = data["bundleIdentifier"] as? String,
@@ -438,7 +438,7 @@ class DatabaseManager: ObservableObject {
                         return nil
                     }
                     
-                    return NewAppDetection(
+                    return WatchWise.NewAppDetection(
                         appName: appName,
                         bundleIdentifier: bundleIdentifier,
                         category: data["category"] as? String ?? "Unknown",
@@ -461,10 +461,10 @@ class DatabaseManager: ObservableObject {
             ]) { error in
                 if let error = error {
                     print("🔥 Error marking detection as notified: \(error)")
-                    completion(.failure(error))
+                    completion(Result<Void, Error>.failure(error))
                 } else {
                     print("✅ New app detection marked as notified")
-                    completion(.success(()))
+                    completion(Result<Void, Error>.success(()))
                 }
             }
     }

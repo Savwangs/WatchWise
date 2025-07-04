@@ -768,7 +768,7 @@ struct AppLimitData: Identifiable {
 
 // MARK: - New App Detection Row
 struct NewAppDetectionRow: View {
-    let detection: NewAppDetection
+    let detection: WatchWise.NewAppDetection
     let onAddToMonitoring: () -> Void
     let onIgnore: () -> Void
     
@@ -827,7 +827,6 @@ struct NewAppDetectionRow: View {
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
     }
-}
 }
 
 // MARK: - Clean App Limit Slider (for Settings)

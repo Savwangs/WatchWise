@@ -133,9 +133,9 @@ class HeartbeatManager: ObservableObject {
                 return ChildHeartbeatStatus(
                     childUserId: childUserId,
                     childName: "Unknown",
-                    lastHeartbeat: nil,
-                    status: .offline,
-                    deviceInfo: nil
+                    lastHeartbeat: nil as Date?,
+                    status: HeartbeatStatus.offline,
+                    deviceInfo: nil as DeviceInfo?
                 )
             }
             
@@ -158,9 +158,9 @@ class HeartbeatManager: ObservableObject {
             return ChildHeartbeatStatus(
                 childUserId: childUserId,
                 childName: "Unknown",
-                lastHeartbeat: nil,
-                status: .offline,
-                deviceInfo: nil
+                lastHeartbeat: nil as Date?,
+                status: HeartbeatStatus.offline,
+                deviceInfo: nil as DeviceInfo?
             )
         }
     }
@@ -169,9 +169,13 @@ class HeartbeatManager: ObservableObject {
         guard let data = data else { return nil }
         
         return DeviceInfo(
+            deviceModel: data["deviceModel"] as? String ?? "Unknown Device",
+            systemVersion: data["systemVersion"] as? String ?? "Unknown",
+            appVersion: data["appVersion"] as? String ?? "Unknown",
+            lastSyncAt: data["lastSyncAt"] as? Timestamp ?? Timestamp(),
+            isOnline: data["isOnline"] as? Bool ?? false,
             deviceName: data["deviceName"] as? String ?? "Unknown Device",
             osVersion: data["osVersion"] as? String ?? "Unknown",
-            appVersion: data["appVersion"] as? String ?? "Unknown",
             batteryLevel: data["batteryLevel"] as? Double ?? 0.0,
             isCharging: data["isCharging"] as? Bool ?? false,
             networkStatus: data["networkStatus"] as? String ?? "Unknown"
@@ -259,11 +263,15 @@ class HeartbeatManager: ObservableObject {
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
         
         return DeviceInfo(
+            deviceModel: device.model,
+            systemVersion: device.systemVersion,
+            appVersion: appVersion,
+            lastSyncAt: Timestamp(),
+            isOnline: true,
             deviceName: device.name,
             osVersion: device.systemVersion,
-            appVersion: appVersion,
-            batteryLevel: device.batteryLevel,
-            isCharging: device.batteryState == .charging,
+            batteryLevel: Double(device.batteryLevel),
+            isCharging: device.batteryState == .charging || device.batteryState == .full,
             networkStatus: await getNetworkStatus()
         )
     }
@@ -319,11 +327,4 @@ enum HeartbeatStatus {
     case unknown
 }
 
-struct DeviceInfo: Codable {
-    let deviceName: String
-    let osVersion: String
-    let appVersion: String
-    let batteryLevel: Double
-    let isCharging: Bool
-    let networkStatus: String
-} 
+ 

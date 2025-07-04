@@ -12,6 +12,8 @@ import Combine
 
 @MainActor
 class MessagingManager: ObservableObject {
+    static let shared = MessagingManager()
+    
     @Published var messages: [Message] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
@@ -26,8 +28,12 @@ class MessagingManager: ObservableObject {
     @Published var isParentTyping = false
     @Published var isChildTyping = false
     
+    private init() {}
+    
     deinit {
-        disconnect()
+        Task { @MainActor in
+            disconnect()
+        }
     }
     
     // MARK: - Connection Management
@@ -340,42 +346,4 @@ class MessagingManager: ObservableObject {
     }
 }
 
-// MARK: - Message Model
-struct Message: Codable, Identifiable {
-    let id: String
-    let text: String
-    let senderId: String
-    let receiverId: String
-    let timestamp: Date
-    let messageType: MessageType
-    var isRead: Bool
-    let senderType: SenderType
-    var readAt: Date?
-    
-    enum CodingKeys: String, CodingKey {
-        case id, text, senderId, receiverId, timestamp, messageType, isRead, senderType, readAt
-    }
-    
-    var formattedTimestamp: String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: timestamp, relativeTo: Date())
-    }
-    
-    var isFromParent: Bool {
-        return senderType == .parent
-    }
-}
 
-// MARK: - Supporting Enums
-enum MessageType: String, Codable, CaseIterable {
-    case text = "text"
-    case image = "image"
-    case system = "system"
-}
-
-enum SenderType: String, Codable, CaseIterable {
-    case parent = "parent"
-    case child = "child"
-    case system = "system"
-}

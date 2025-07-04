@@ -11,7 +11,7 @@ import Foundation
 
 struct MessagesView: View {
     @EnvironmentObject var authManager: AuthenticationManager
-    @StateObject private var messagingManager = MessagingManager()
+    @StateObject private var messagingManager = MessagingManager.shared
     @StateObject private var pairingManager = PairingManager.shared
     
     @State private var messageText = ""

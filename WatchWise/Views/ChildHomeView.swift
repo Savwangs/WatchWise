@@ -16,7 +16,7 @@ struct ChildHomeView: View {
     @StateObject private var messagingManager = MessagingManager.shared
     @State private var showSignOutAlert = false
     @State private var showPermissionAlert = false
-    @State private var messages: [MessageData] = []
+    @State private var messages: [Message] = []
     @State private var messageListener: ListenerRegistration?
     
     var body: some View {
@@ -58,8 +58,8 @@ struct ChildHomeView: View {
                             } else {
                                 ForEach(messages, id: \.id) { message in
                                     MessageRow(
-                                        message: message.message,
-                                        timestamp: formatTimestamp(message.timestamp),
+                                        message: message.text,
+                                        timestamp: message.formattedTimestamp,
                                         isFromParent: true // All messages in child view are from parent
                                     )
                                 }
@@ -413,23 +413,21 @@ struct ChildHomeView: View {
     private func loadMessages() {
         guard let deviceId = authManager.currentUser?.id else { return }
         
-        Task {
-            do {
-                let messageHistory = try await messagingManager.getMessageHistory(for: deviceId, deviceId: deviceId)
-                await MainActor.run {
-                    self.messages = messageHistory
-                }
-            } catch {
-                print("❌ Error loading messages: \(error)")
-            }
-        }
+        // Messages will be loaded through the real-time listener
+        // The MessagingManager.shared will handle the connection
     }
     
     private func setupMessageListener() {
         guard let deviceId = authManager.currentUser?.id else { return }
         
-        messageListener = messagingManager.listenForMessages(childDeviceId: deviceId) { messages in
-            self.messages = messages
+        // Connect to messaging manager for real-time updates
+        messagingManager.connect(parentId: deviceId, childId: deviceId)
+        
+        // Listen for message updates
+        Task {
+            await MainActor.run {
+                self.messages = messagingManager.messages
+            }
         }
     }
     
