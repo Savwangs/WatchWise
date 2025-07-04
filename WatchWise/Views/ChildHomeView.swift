@@ -7,13 +7,17 @@
 
 import SwiftUI
 import FirebaseAuth
+import FirebaseFirestore
 
 struct ChildHomeView: View {
     @EnvironmentObject var authManager: AuthenticationManager
     @StateObject private var screenTimeDataManager = ScreenTimeDataManager()
     @StateObject private var activityManager = ActivityMonitoringManager.shared
+    @StateObject private var messagingManager = MessagingManager.shared
     @State private var showSignOutAlert = false
     @State private var showPermissionAlert = false
+    @State private var messages: [MessageData] = []
+    @State private var messageListener: ListenerRegistration?
     
     var body: some View {
         TabView {
@@ -22,7 +26,7 @@ struct ChildHomeView: View {
                 VStack(spacing: 20) {
                     // Welcome Header
                     VStack(spacing: 8) {
-                        Text(authManager.isNewSignUp ? "Connection Successful!" : "Welcome back, \(authManager.currentUser?.name ?? "Child")!")
+                        Text(getWelcomeMessage())
                             .onAppear {
                                 // Debug logging to help identify the issue
                                 if let user = authManager.currentUser {
@@ -46,12 +50,19 @@ struct ChildHomeView: View {
                     // Messages List
                     ScrollView {
                         VStack(spacing: 12) {
-                            ForEach(messagesManager.messages, id: \.id) { message in
-                                MessageRow(
-                                    message: message.content,
-                                    timestamp: message.formattedDate,
-                                    isFromParent: message.isFromParent
-                                )
+                            if messages.isEmpty {
+                                Text("No messages yet")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                    .padding(.vertical, 40)
+                            } else {
+                                ForEach(messages, id: \.id) { message in
+                                    MessageRow(
+                                        message: message.message,
+                                        timestamp: formatTimestamp(message.timestamp),
+                                        isFromParent: true // All messages in child view are from parent
+                                    )
+                                }
                             }
                         }
                         .padding(.horizontal, 20)
@@ -74,7 +85,7 @@ struct ChildHomeView: View {
                             Image(systemName: "iphone")
                                 .foregroundColor(.blue)
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(authManager.currentUser?.deviceName ?? "This Device")
+                                Text(getDeviceName())
                                     .font(.body)
                                 Text(authManager.currentUser?.isDevicePaired == true ? "Connected to Parent Device" : "Not Connected to Parent")
                                     .font(.caption)
@@ -157,7 +168,7 @@ struct ChildHomeView: View {
                         HStack {
                             Image(systemName: "person.circle.fill")
                                 .foregroundColor(.gray)
-                            Text(authManager.currentUser?.name ?? "Child User")
+                            Text(getChildName())
                             .onAppear {
                                 // Additional safety check
                                 if let name = authManager.currentUser?.name {
@@ -314,9 +325,14 @@ struct ChildHomeView: View {
             Button("Grant Permission") {
                 Task {
                     await screenTimeDataManager.requestAuthorization()
+                    // Mark that permission has been requested
+                    UserDefaults.standard.set(true, forKey: "hasRequestedScreenTimePermission")
                 }
             }
-            Button("Later", role: .cancel) { }
+            Button("Later", role: .cancel) { 
+                // Mark that permission has been requested (even if declined)
+                UserDefaults.standard.set(true, forKey: "hasRequestedScreenTimePermission")
+            }
         } message: {
             Text("Screen Time monitoring requires Family Controls permission to track app usage and help your parent monitor your device usage.")
         }
@@ -336,6 +352,10 @@ struct ChildHomeView: View {
                 print("❌ No user data available in ChildHomeView")
             }
             
+            // Load messages
+            loadMessages()
+            setupMessageListener()
+            
             // Start heartbeat monitoring for child device with error handling
             Task {
                 do {
@@ -345,11 +365,13 @@ struct ChildHomeView: View {
                 }
             }
             
-            // Check if screen time authorization is needed
-            if !screenTimeDataManager.isAuthorized {
-                print("🔍 Screen time authorization needed")
+            // Check if screen time authorization is needed (only for new users)
+            let hasRequestedPermission = UserDefaults.standard.bool(forKey: "hasRequestedScreenTimePermission")
+            
+            if !screenTimeDataManager.isAuthorized && !hasRequestedPermission {
+                print("🔍 Screen time authorization needed for new user")
                 showPermissionAlert = true
-            } else if let deviceId = authManager.currentUser?.id {
+            } else if screenTimeDataManager.isAuthorized, let deviceId = authManager.currentUser?.id {
                 // Start screen time monitoring if authorized
                 print("🔍 Starting screen time monitoring for device: \(deviceId)")
                 Task {
@@ -360,13 +382,16 @@ struct ChildHomeView: View {
                     }
                 }
             } else {
-                print("❌ No device ID available for screen time monitoring")
+                print("❌ No device ID available for screen time monitoring or permission not granted")
             }
         }
         .onChange(of: screenTimeDataManager.errorMessage) { errorMessage in
             if let error = errorMessage {
                 print("🔥 Screen Time Error: \(error)")
             }
+        }
+        .onDisappear {
+            messageListener?.remove()
         }
     }
     
@@ -382,6 +407,58 @@ struct ChildHomeView: View {
         
         // Sign out from Firebase
         authManager.signOut()
+    }
+    
+    // MARK: - Message Management
+    private func loadMessages() {
+        guard let deviceId = authManager.currentUser?.id else { return }
+        
+        Task {
+            do {
+                let messageHistory = try await messagingManager.getMessageHistory(for: deviceId, deviceId: deviceId)
+                await MainActor.run {
+                    self.messages = messageHistory
+                }
+            } catch {
+                print("❌ Error loading messages: \(error)")
+            }
+        }
+    }
+    
+    private func setupMessageListener() {
+        guard let deviceId = authManager.currentUser?.id else { return }
+        
+        messageListener = messagingManager.listenForMessages(childDeviceId: deviceId) { messages in
+            self.messages = messages
+        }
+    }
+    
+    private func formatTimestamp(_ timestamp: Timestamp) -> String {
+        let date = timestamp.dateValue()
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+    
+    private func getWelcomeMessage() -> String {
+        let isFirstTime = UserDefaults.standard.bool(forKey: "hasShownWelcomeMessage")
+        let childName = getChildName()
+        
+        if !isFirstTime {
+            // Mark that welcome message has been shown
+            UserDefaults.standard.set(true, forKey: "hasShownWelcomeMessage")
+            return "Connection Successful, \(childName)!"
+        } else {
+            return "Welcome back, \(childName)!"
+        }
+    }
+    
+    private func getChildName() -> String {
+        return authManager.currentUser?.name ?? "Child"
+    }
+    
+    private func getDeviceName() -> String {
+        return authManager.currentUser?.deviceName ?? "This Device"
     }
 }
 
