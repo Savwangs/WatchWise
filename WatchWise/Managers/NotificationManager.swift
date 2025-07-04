@@ -2,410 +2,619 @@
 //  NotificationManager.swift
 //  WatchWise
 //
-//  Created by Savir Wangoo on 6/7/25.
+//  Created by Savir Wangoo on 7/2/25.
 //
 
 import Foundation
-import UserNotifications
-import UIKit
 import FirebaseFirestore
 import FirebaseAuth
+import UserNotifications
+import UIKit
 
 @MainActor
 class NotificationManager: ObservableObject {
-    static let shared = NotificationManager()
-    
     @Published var notifications: [AppNotification] = []
-    @Published var unreadCount: Int = 0
+    @Published var unreadCount = 0
     @Published var isLoading = false
+    @Published var errorMessage: String?
     
-    private let firebaseManager = FirebaseManager.shared
-    private var listenerRegistration: ListenerRegistration?
+    private let db = Firestore.firestore()
+    private var notificationListener: ListenerRegistration?
     
-    struct AppNotification: Identifiable, Codable {
-        let id: String
-        let parentUserId: String
-        let childUserId: String
-        let childName: String
-        let type: NotificationType
-        let title: String
-        let message: String
-        let timestamp: Timestamp
-        var isRead: Bool
-        
-        enum NotificationType: String, Codable {
-            case inactivity_alert
-            case device_unlinked
-            case screen_time_limit
-            case bedtime_reminder
-            case app_usage_alert
-            case general
-            
-            var icon: String {
-                switch self {
-                case .inactivity_alert:
-                    return "⏰"
-                case .device_unlinked:
-                    return "🔗"
-                case .screen_time_limit:
-                    return "📱"
-                case .bedtime_reminder:
-                    return "🌙"
-                case .app_usage_alert:
-                    return "⚠️"
-                case .general:
-                    return "📢"
-                }
-            }
-            
-            var color: String {
-                switch self {
-                case .inactivity_alert:
-                    return "orange"
-                case .device_unlinked:
-                    return "red"
-                case .screen_time_limit:
-                    return "blue"
-                case .bedtime_reminder:
-                    return "purple"
-                case .app_usage_alert:
-                    return "yellow"
-                case .general:
-                    return "gray"
-                }
-            }
-        }
+    deinit {
+        disconnect()
     }
     
-    private init() {
-        setupNotificationPermissions()
+    // MARK: - Setup & Connection
+    
+    func setup() {
+        requestNotificationPermissions()
+        setupNotificationCategories()
+    }
+    
+    func connect(userId: String) {
+        disconnect()
+        
+        isLoading = true
+        errorMessage = nil
+        
+        setupNotificationListener(userId: userId)
+        
+        isLoading = false
+        
+        print("🔔 NotificationManager: Connected for user \(userId)")
+    }
+    
+    func disconnect() {
+        notificationListener?.remove()
+        notificationListener = nil
+        notifications.removeAll()
+        unreadCount = 0
+        
+        print("🔔 NotificationManager: Disconnected")
     }
     
     // MARK: - Notification Permissions
     
-    private func setupNotificationPermissions() {
+    private func requestNotificationPermissions() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
-            if granted {
-                print("✅ Notification permissions granted")
             DispatchQueue.main.async {
+                if granted {
                     UIApplication.shared.registerForRemoteNotifications()
+                    print("✅ Notification permissions granted")
+                } else if let error = error {
+                    print("❌ Notification permission error: \(error.localizedDescription)")
                 }
-            } else {
-                print("❌ Notification permissions denied: \(error?.localizedDescription ?? "Unknown error")")
             }
         }
     }
     
-    // MARK: - Real-time Notifications
+    private func setupNotificationCategories() {
+        // App limit exceeded category
+        let appLimitCategory = UNNotificationCategory(
+            identifier: "APP_LIMIT_EXCEEDED",
+            actions: [
+                UNNotificationAction(
+                    identifier: "EXTEND_TIME",
+                    title: "Extend Time",
+                    options: [.foreground]
+                ),
+                UNNotificationAction(
+                    identifier: "VIEW_DETAILS",
+                    title: "View Details",
+                    options: [.foreground]
+                )
+            ],
+            intentIdentifiers: [],
+            options: []
+        )
+        
+        // New app detected category
+        let newAppCategory = UNNotificationCategory(
+            identifier: "NEW_APP_DETECTED",
+            actions: [
+                UNNotificationAction(
+                    identifier: "ADD_TO_MONITORING",
+                    title: "Add to Monitoring",
+                    options: [.foreground]
+                ),
+                UNNotificationAction(
+                    identifier: "IGNORE_APP",
+                    title: "Ignore",
+                    options: []
+                )
+            ],
+            intentIdentifiers: [],
+            options: []
+        )
+        
+        // App deleted category
+        let appDeletedCategory = UNNotificationCategory(
+            identifier: "APP_DELETED",
+            actions: [
+                UNNotificationAction(
+                    identifier: "VIEW_HISTORY",
+                    title: "View History",
+                    options: [.foreground]
+                ),
+                UNNotificationAction(
+                    identifier: "DISMISS",
+                    title: "Dismiss",
+                    options: []
+                )
+            ],
+            intentIdentifiers: [],
+            options: []
+        )
+        
+        // Message category
+        let messageCategory = UNNotificationCategory(
+            identifier: "NEW_MESSAGE",
+            actions: [
+                UNNotificationAction(
+                    identifier: "REPLY",
+                    title: "Reply",
+                    options: [.foreground]
+                ),
+                UNNotificationAction(
+                    identifier: "VIEW_CHAT",
+                    title: "View Chat",
+                    options: [.foreground]
+                )
+            ],
+            intentIdentifiers: [],
+            options: []
+        )
+        
+        // Register categories
+        UNUserNotificationCenter.current().setNotificationCategories([
+            appLimitCategory,
+            newAppCategory,
+            appDeletedCategory,
+            messageCategory
+        ])
+    }
     
-    func startListeningForNotifications() {
-        guard let currentUser = Auth.auth().currentUser else {
-            print("❌ No authenticated user for notifications")
-            return
-        }
-        
-        stopListeningForNotifications()
-        
-        print("🔄 Starting to listen for notifications for user: \(currentUser.uid)")
-        
-        listenerRegistration = firebaseManager.db.collection("notifications")
-            .whereField("parentUserId", isEqualTo: currentUser.uid)
+    // MARK: - Notification Listener
+    
+    private func setupNotificationListener(userId: String) {
+        notificationListener = db.collection("notifications")
+            .whereField("recipientId", isEqualTo: userId)
             .order(by: "timestamp", descending: true)
+            .limit(to: 100)
             .addSnapshotListener { [weak self] snapshot, error in
-                guard let self = self else { return }
-                
-                if let error = error {
-                    print("❌ Error listening for notifications: \(error)")
-                    return
-                }
-                
-                guard let snapshot = snapshot else {
-                    print("❌ No snapshot for notifications")
-                    return
-                }
-                
-                let newNotifications = snapshot.documents.compactMap { document -> AppNotification? in
-                    let data = document.data()
+                Task { @MainActor in
+                    guard let self = self else { return }
                     
-                    guard let parentUserId = data["parentUserId"] as? String,
-                          let childUserId = data["childUserId"] as? String,
-                          let childName = data["childName"] as? String,
-                          let typeString = data["type"] as? String,
-                          let type = AppNotification.NotificationType(rawValue: typeString),
-                          let title = data["title"] as? String,
-                          let message = data["message"] as? String,
-                          let timestamp = data["timestamp"] as? Timestamp,
-                          let isRead = data["isRead"] as? Bool else {
-                        return nil
+                    if let error = error {
+                        self.errorMessage = "Failed to load notifications: \(error.localizedDescription)"
+                        print("❌ Error loading notifications: \(error)")
+                        return
                     }
                     
-                    return AppNotification(
-                        id: document.documentID,
-                        parentUserId: parentUserId,
-                        childUserId: childUserId,
-                        childName: childName,
-                        type: type,
-                        title: title,
-                        message: message,
-                        timestamp: timestamp,
-                        isRead: isRead
-                    )
-        }
-        
-        DispatchQueue.main.async {
+                    guard let documents = snapshot?.documents else {
+                        print("🔔 No notifications found")
+                        return
+                    }
+                    
+                    let newNotifications = documents.compactMap { document -> AppNotification? in
+                        try? document.data(as: AppNotification.self)
+                    }
+                    
                     self.notifications = newNotifications
                     self.unreadCount = newNotifications.filter { !$0.isRead }.count
-                    print("📱 Updated notifications: \(newNotifications.count) total, \(self.unreadCount) unread")
+                    
+                    print("🔔 Loaded \(newNotifications.count) notifications (\(self.unreadCount) unread)")
                 }
             }
     }
     
-    func stopListeningForNotifications() {
-        listenerRegistration?.remove()
-        listenerRegistration = nil
-        print("🛑 Stopped listening for notifications")
-    }
+    // MARK: - Notification Operations
     
-    // MARK: - Notification Management
-    
-    func markNotificationAsRead(notificationId: String) async {
+    func markAsRead(_ notificationId: String) async {
         do {
-            try await firebaseManager.db.collection("notifications")
+            try await db.collection("notifications")
                 .document(notificationId)
                 .updateData([
                     "isRead": true,
                     "readAt": Timestamp()
                 ])
             
-            print("✅ Marked notification as read: \(notificationId)")
+            // Update local notification
+            if let index = notifications.firstIndex(where: { $0.id == notificationId }) {
+                notifications[index].isRead = true
+                notifications[index].readAt = Date()
+                unreadCount = notifications.filter { !$0.isRead }.count
+            }
+            
         } catch {
             print("❌ Error marking notification as read: \(error)")
         }
     }
     
-    func markAllNotificationsAsRead() async {
-        guard let currentUser = Auth.auth().currentUser else { return }
-        
+    func markAllAsRead() async {
         do {
-            let snapshot = try await firebaseManager.db.collection("notifications")
-                .whereField("parentUserId", isEqualTo: currentUser.uid)
-                .whereField("isRead", isEqualTo: false)
-                .getDocuments()
+            let batch = db.batch()
             
-            if snapshot.documents.isEmpty {
-                print("✅ No unread notifications to mark")
-                return
-            }
+            let unreadNotifications = notifications.filter { !$0.isRead }
             
-            let batch = firebaseManager.db.batch()
-            
-            for doc in snapshot.documents {
+            for notification in unreadNotifications {
+                let notificationRef = db.collection("notifications").document(notification.id)
                 batch.updateData([
                     "isRead": true,
                     "readAt": Timestamp()
-                ], forDocument: doc.reference)
+                ], forDocument: notificationRef)
             }
             
             try await batch.commit()
-            print("✅ Marked \(snapshot.documents.count) notifications as read")
+            
+            // Update local notifications
+            for index in notifications.indices {
+                notifications[index].isRead = true
+                notifications[index].readAt = Date()
+            }
+            
+            unreadCount = 0
+            
+            print("✅ Marked \(unreadNotifications.count) notifications as read")
             
         } catch {
-            print("❌ Error marking all notifications as read: \(error)")
+            print("❌ Error marking notifications as read: \(error)")
         }
     }
     
-    func deleteNotification(notificationId: String) async {
+    func deleteNotification(_ notificationId: String) async {
         do {
-            try await firebaseManager.db.collection("notifications")
+            try await db.collection("notifications")
                 .document(notificationId)
                 .delete()
             
-            print("✅ Deleted notification: \(notificationId)")
+            // Remove from local notifications
+            notifications.removeAll { $0.id == notificationId }
+            unreadCount = notifications.filter { !$0.isRead }.count
+            
         } catch {
             print("❌ Error deleting notification: \(error)")
         }
     }
     
-    func deleteAllNotifications() async {
-        guard let currentUser = Auth.auth().currentUser else { return }
-        
+    func clearAllNotifications() async {
         do {
-            let snapshot = try await firebaseManager.db.collection("notifications")
-                .whereField("parentUserId", isEqualTo: currentUser.uid)
-                .getDocuments()
+            let batch = db.batch()
             
-            if snapshot.documents.isEmpty {
-                print("✅ No notifications to delete")
-                return
-            }
-            
-            let batch = firebaseManager.db.batch()
-            
-            for doc in snapshot.documents {
-                batch.deleteDocument(doc.reference)
+            for notification in notifications {
+                let notificationRef = db.collection("notifications").document(notification.id)
+                batch.deleteDocument(notificationRef)
             }
             
             try await batch.commit()
-            print("✅ Deleted \(snapshot.documents.count) notifications")
+            
+            notifications.removeAll()
+            unreadCount = 0
+            
+            print("🗑️ Cleared all notifications")
             
         } catch {
-            print("❌ Error deleting all notifications: \(error)")
+            print("❌ Error clearing notifications: \(error)")
         }
     }
     
-    // MARK: - Local Notifications
+    // MARK: - Send Notifications
     
-    func scheduleLocalNotification(title: String, body: String, timeInterval: TimeInterval = 1) {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
+    func sendAppLimitExceededNotification(
+        to parentId: String,
+        appName: String,
+        bundleId: String
+    ) async {
+        let notification = AppNotification(
+            id: UUID().uuidString,
+            recipientId: parentId,
+            type: .appLimitExceeded,
+            title: "App Time Limit Exceeded",
+            message: "\(appName) has reached its daily time limit",
+            data: [
+                "bundleId": bundleId,
+                "appName": appName
+            ],
+            timestamp: Date(),
+            isRead: false
+        )
         
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: timeInterval, repeats: false)
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+        await sendNotification(notification)
+    }
+    
+    func sendNewAppDetectedNotification(
+        to parentId: String,
+        appName: String,
+        bundleId: String
+    ) async {
+        let notification = AppNotification(
+            id: UUID().uuidString,
+            recipientId: parentId,
+            type: .newAppDetected,
+            title: "New App Detected",
+            message: "\(appName) has been installed on your child's device",
+            data: [
+                "bundleId": bundleId,
+                "appName": appName
+            ],
+            timestamp: Date(),
+            isRead: false
+        )
         
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                print("❌ Error scheduling local notification: \(error)")
-            } else {
-                print("✅ Local notification scheduled")
+        await sendNotification(notification)
+    }
+    
+    func sendAppDeletedNotification(
+        to parentId: String,
+        appName: String,
+        bundleId: String
+    ) async {
+        let notification = AppNotification(
+            id: UUID().uuidString,
+            recipientId: parentId,
+            type: .appDeleted,
+            title: "App Deleted",
+            message: "\(appName) has been deleted from your child's device",
+            data: [
+                "bundleId": bundleId,
+                "appName": appName
+            ],
+            timestamp: Date(),
+            isRead: false
+        )
+        
+        await sendNotification(notification)
+    }
+    
+    func sendMessageNotification(
+        to recipientId: String,
+        from senderId: String,
+        message: String,
+        messageId: String
+    ) async {
+        let notification = AppNotification(
+            id: UUID().uuidString,
+            recipientId: recipientId,
+            type: .newMessage,
+            title: "New Message",
+            message: message,
+            data: [
+                "senderId": senderId,
+                "messageId": messageId
+            ],
+            timestamp: Date(),
+            isRead: false
+        )
+        
+        await sendNotification(notification)
+    }
+    
+    func sendBedtimeReminderNotification(
+        to parentId: String,
+        childName: String
+    ) async {
+        let notification = AppNotification(
+            id: UUID().uuidString,
+            recipientId: parentId,
+            type: .bedtimeReminder,
+            title: "Bedtime Reminder",
+            message: "It's time for \(childName) to go to bed. Apps will be disabled soon.",
+            data: [
+                "childName": childName
+            ],
+            timestamp: Date(),
+            isRead: false
+        )
+        
+        await sendNotification(notification)
+    }
+    
+    func sendScreenTimeSummaryNotification(
+        to parentId: String,
+        childName: String,
+        totalTime: TimeInterval
+    ) async {
+        let hours = Int(totalTime) / 3600
+        let minutes = Int(totalTime) % 3600 / 60
+        
+        let timeString = hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
+        
+        let notification = AppNotification(
+            id: UUID().uuidString,
+            recipientId: parentId,
+            type: .screenTimeSummary,
+            title: "Daily Screen Time Summary",
+            message: "\(childName) used their device for \(timeString) today",
+            data: [
+                "childName": childName,
+                "totalTime": totalTime
+            ],
+            timestamp: Date(),
+            isRead: false
+        )
+        
+        await sendNotification(notification)
+    }
+    
+    func sendDeviceOfflineNotification(
+        to parentId: String,
+        childName: String,
+        childUserId: String
+    ) async {
+        let notification = AppNotification(
+            id: UUID().uuidString,
+            recipientId: parentId,
+            type: .deviceOffline,
+            title: "Device Unreachable",
+            message: "\(childName)'s device hasn't been reachable for over 24 hours. The device may be offline, powered off, or WatchWise may have been removed.",
+            data: [
+                "childUserId": childUserId,
+                "childName": childName,
+                "offlineSince": Date().timeIntervalSince1970
+            ],
+            timestamp: Date(),
+            isRead: false
+        )
+        
+        await sendNotification(notification)
+    }
+    
+    // MARK: - Private Methods
+    
+    private func sendNotification(_ notification: AppNotification) async {
+        do {
+            // Save to Firebase
+            try await saveNotificationToFirebase(notification)
+            
+            // Add to local notifications
+            notifications.insert(notification, at: 0)
+            if !notification.isRead {
+                unreadCount += 1
             }
+            
+            // Send local notification
+            await sendLocalNotification(notification)
+            
+            print("🔔 Sent notification: \(notification.title)")
+            
+        } catch {
+            print("❌ Error sending notification: \(error)")
         }
     }
     
-    func scheduleBedtimeReminder(at time: Date, childName: String) {
+    private func saveNotificationToFirebase(_ notification: AppNotification) async throws {
+        let data: [String: Any] = [
+            "id": notification.id,
+            "recipientId": notification.recipientId,
+            "type": notification.type.rawValue,
+            "title": notification.title,
+            "message": notification.message,
+            "data": notification.data,
+            "timestamp": Timestamp(date: notification.timestamp),
+            "isRead": notification.isRead
+        ]
+        
+        try await db.collection("notifications")
+            .document(notification.id)
+            .setData(data)
+    }
+    
+    private func sendLocalNotification(_ notification: AppNotification) async {
         let content = UNMutableNotificationContent()
-        content.title = "Bedtime Reminder"
-        content.body = "It's time for \(childName) to put their device away for the night."
+        content.title = notification.title
+        content.body = notification.message
         content.sound = .default
+        content.badge = NSNumber(value: unreadCount)
+        content.categoryIdentifier = notification.type.categoryIdentifier
         
-        let calendar = Calendar.current
-        let components = calendar.dateComponents([.hour, .minute], from: time)
-        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+        // Add custom data
+        content.userInfo = notification.data
         
+        // Create trigger (immediate)
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        
+        // Create request
         let request = UNNotificationRequest(
-            identifier: "bedtime-reminder-\(childName)",
+            identifier: notification.id,
             content: content,
             trigger: trigger
         )
         
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                print("❌ Error scheduling bedtime reminder: \(error)")
-            } else {
-                print("✅ Bedtime reminder scheduled for \(childName)")
-            }
-        }
-    }
-    
-    func cancelBedtimeReminder(for childName: String) {
-        UNUserNotificationCenter.current().removePendingNotificationRequests(
-            withIdentifiers: ["bedtime-reminder-\(childName)"]
-        )
-        print("✅ Cancelled bedtime reminder for \(childName)")
-    }
-    
-    // MARK: - Notification Analytics
-    
-    func logNotificationInteraction(notificationId: String, action: String) {
-        Task {
-            do {
-                try await firebaseManager.db.collection("notificationAnalytics").addDocument(data: [
-                    "notificationId": notificationId,
-                    "action": action,
-                    "userId": Auth.auth().currentUser?.uid ?? "",
-                    "timestamp": Timestamp()
-                ])
-            } catch {
-                print("❌ Error logging notification interaction: \(error)")
-            }
-        }
-    }
-    
-    // MARK: - Notification Settings
-    
-    func updateNotificationSettings(settings: NotificationSettings) async {
-        guard let currentUser = Auth.auth().currentUser else { return }
-        
+        // Schedule notification
         do {
-            try await firebaseManager.settingsCollection.document(currentUser.uid).setData([
-                "notificationSettings": [
-                    "inactivityAlerts": settings.inactivityAlerts,
-                    "screenTimeAlerts": settings.screenTimeAlerts,
-                    "bedtimeReminders": settings.bedtimeReminders,
-                    "appUsageAlerts": settings.appUsageAlerts,
-                    "deviceUnlinkAlerts": settings.deviceUnlinkAlerts,
-                    "quietHours": settings.quietHours,
-                    "quietHoursStart": settings.quietHoursStart,
-                    "quietHoursEnd": settings.quietHoursEnd
-                ],
-                "updatedAt": Timestamp()
-            ], merge: true)
-            
-            print("✅ Updated notification settings")
+            try await UNUserNotificationCenter.current().add(request)
         } catch {
-            print("❌ Error updating notification settings: \(error)")
+            print("❌ Error scheduling local notification: \(error)")
         }
     }
     
-    func getNotificationSettings() async -> NotificationSettings? {
-        guard let currentUser = Auth.auth().currentUser else { return nil }
-        
-        do {
-            let document = try await firebaseManager.settingsCollection.document(currentUser.uid).getDocument()
-            
-            guard let data = document.data(),
-                  let settingsData = data["notificationSettings"] as? [String: Any] else {
-                return NotificationSettings.defaultSettings
-            }
-            
-            return NotificationSettings(
-                inactivityAlerts: settingsData["inactivityAlerts"] as? Bool ?? true,
-                screenTimeAlerts: settingsData["screenTimeAlerts"] as? Bool ?? true,
-                bedtimeReminders: settingsData["bedtimeReminders"] as? Bool ?? true,
-                appUsageAlerts: settingsData["appUsageAlerts"] as? Bool ?? true,
-                deviceUnlinkAlerts: settingsData["deviceUnlinkAlerts"] as? Bool ?? true,
-                quietHours: settingsData["quietHours"] as? Bool ?? false,
-                quietHoursStart: settingsData["quietHoursStart"] as? String ?? "22:00",
-                quietHoursEnd: settingsData["quietHoursEnd"] as? String ?? "08:00"
-            )
-        } catch {
-            print("❌ Error getting notification settings: \(error)")
-            return NotificationSettings.defaultSettings
+    // MARK: - Utility Methods
+    
+    func getNotificationsByType(_ type: NotificationType) -> [AppNotification] {
+        return notifications.filter { $0.type == type }
+    }
+    
+    func getUnreadNotifications() -> [AppNotification] {
+        return notifications.filter { !$0.isRead }
+    }
+    
+    func clearError() {
+        errorMessage = nil
+    }
+}
+
+// MARK: - App Notification Model
+struct AppNotification: Codable, Identifiable {
+    let id: String
+    let recipientId: String
+    let type: NotificationType
+    let title: String
+    let message: String
+    let data: [String: Any]
+    let timestamp: Date
+    var isRead: Bool
+    var readAt: Date?
+    
+    enum CodingKeys: String, CodingKey {
+        case id, recipientId, type, title, message, data, timestamp, isRead, readAt
+    }
+    
+    var formattedTimestamp: String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: timestamp, relativeTo: Date())
+    }
+}
+
+// MARK: - Notification Type Enum
+enum NotificationType: String, Codable, CaseIterable {
+    case appLimitExceeded = "app_limit_exceeded"
+    case newAppDetected = "new_app_detected"
+    case appDeleted = "app_deleted"
+    case newMessage = "new_message"
+    case bedtimeReminder = "bedtime_reminder"
+    case screenTimeSummary = "screen_time_summary"
+    case deviceOffline = "device_offline"
+    case systemAlert = "system_alert"
+    
+    var categoryIdentifier: String {
+        switch self {
+        case .appLimitExceeded:
+            return "APP_LIMIT_EXCEEDED"
+        case .newAppDetected:
+            return "NEW_APP_DETECTED"
+        case .appDeleted:
+            return "APP_DELETED"
+        case .newMessage:
+            return "NEW_MESSAGE"
+        case .bedtimeReminder, .screenTimeSummary, .deviceOffline, .systemAlert:
+            return "DEFAULT"
         }
     }
     
-    // MARK: - Cleanup
+    var icon: String {
+        switch self {
+        case .appLimitExceeded:
+            return "clock.badge.exclamationmark"
+        case .newAppDetected:
+            return "app.badge.plus"
+        case .appDeleted:
+            return "app.badge.minus"
+        case .newMessage:
+            return "message.fill"
+        case .bedtimeReminder:
+            return "moon.fill"
+        case .screenTimeSummary:
+            return "chart.bar.fill"
+        case .deviceOffline:
+            return "wifi.slash"
+        case .systemAlert:
+            return "exclamationmark.triangle.fill"
+        }
+    }
     
-    deinit {
-        Task { @MainActor in
-            stopListeningForNotifications()
+    var color: String {
+        switch self {
+        case .appLimitExceeded:
+            return "red"
+        case .newAppDetected:
+            return "orange"
+        case .appDeleted:
+            return "purple"
+        case .newMessage:
+            return "blue"
+        case .bedtimeReminder:
+            return "indigo"
+        case .screenTimeSummary:
+            return "green"
+        case .deviceOffline:
+            return "gray"
+        case .systemAlert:
+            return "yellow"
         }
     }
 }
 
-// MARK: - Notification Settings Model
-
-struct NotificationSettings {
-    var inactivityAlerts: Bool
-    var screenTimeAlerts: Bool
-    var bedtimeReminders: Bool
-    var appUsageAlerts: Bool
-    var deviceUnlinkAlerts: Bool
-    var quietHours: Bool
-    var quietHoursStart: String
-    var quietHoursEnd: String
-    
-    static let defaultSettings = NotificationSettings(
-        inactivityAlerts: true,
-        screenTimeAlerts: true,
-        bedtimeReminders: true,
-        appUsageAlerts: true,
-        deviceUnlinkAlerts: true,
-        quietHours: false,
-        quietHoursStart: "22:00",
-        quietHoursEnd: "08:00"
-    )
-}
 
 

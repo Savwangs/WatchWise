@@ -34,12 +34,19 @@ struct MainTabView: View {
                 }
                 .tag(2)
             
-            SettingsView()
+            NotificationsView()
                 .tabItem {
-                    Image(systemName: selectedTab == 3 ? "gear.fill" : "gear")
-                    Text("Settings")
+                    Image(systemName: selectedTab == 3 ? "bell.fill" : "bell")
+                    Text("Notifications")
                 }
                 .tag(3)
+            
+            SettingsView()
+                .tabItem {
+                    Image(systemName: selectedTab == 4 ? "gear.fill" : "gear")
+                    Text("Settings")
+                }
+                .tag(4)
         }
         .accentColor(.blue)
         .onAppear {

@@ -2,392 +2,380 @@
 //  MessagingManager.swift
 //  WatchWise
 //
-//  Created by Savir Wangoo on 6/7/25.
+//  Created by Savir Wangoo on 7/2/25.
 //
 
 import Foundation
-import FirebaseMessaging
 import FirebaseFirestore
-import UserNotifications
-import UIKit
+import FirebaseAuth
+import Combine
 
 @MainActor
-class MessagingManager: NSObject, ObservableObject {
-    static let shared = MessagingManager()
-    
-    @Published var fcmToken: String?
-    @Published var isTokenRegistered = false
+class MessagingManager: ObservableObject {
+    @Published var messages: [Message] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    @Published var isConnected = false
     
     private let db = Firestore.firestore()
-    private let messaging = Messaging.messaging()
+    private var messageListener: ListenerRegistration?
+    private var typingListener: ListenerRegistration?
+    private var lastMessageTimestamp: Timestamp?
     
-    override init() {
-        super.init()
-        messaging.delegate = self
-        setupNotifications()
+    // Typing indicators
+    @Published var isParentTyping = false
+    @Published var isChildTyping = false
+    
+    deinit {
+        disconnect()
     }
     
-    // MARK: - Setup
-    func setupNotifications() {
-        // Note: NotificationManager.shared is not a UNUserNotificationCenterDelegate
-        // The delegate is set in the main app delegate
-        requestNotificationPermissions()
+    // MARK: - Connection Management
+    
+    func connect(parentId: String, childId: String) {
+        disconnect() // Clean up any existing connections
+        
+        isLoading = true
+        errorMessage = nil
+        
+        // Set up real-time message listener
+        setupMessageListener(parentId: parentId, childId: childId)
+        
+        // Set up typing indicator listener
+        setupTypingListener(parentId: parentId, childId: childId)
+        
+        isConnected = true
+        isLoading = false
+        
+        print("💬 MessagingManager: Connected to chat for parent \(parentId) and child \(childId)")
     }
     
-    private func requestNotificationPermissions() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
-            DispatchQueue.main.async {
-                if granted {
-                    UIApplication.shared.registerForRemoteNotifications()
-                } else if let error = error {
-                    print("❌ Notification permission error: \(error.localizedDescription)")
-                }
-            }
-        }
+    func disconnect() {
+        messageListener?.remove()
+        typingListener?.remove()
+        messageListener = nil
+        typingListener = nil
+        isConnected = false
+        messages.removeAll()
+        
+        print("💬 MessagingManager: Disconnected from chat")
     }
     
-    // MARK: - Token Management
-    func retrieveFCMToken(for userId: String, deviceType: DeviceType) async throws {
-        do {
-            let token = try await messaging.token()
-            self.fcmToken = token
-            try await registerTokenInFirestore(userId: userId, token: token, deviceType: deviceType)
-            print("✅ FCM Token retrieved and registered: \(token)")
-        } catch {
-            print("❌ Error retrieving FCM token: \(error)")
-            throw MessagingError.tokenRetrievalFailed
-        }
-    }
+    // MARK: - Message Operations
     
-    private func registerTokenInFirestore(userId: String, token: String, deviceType: DeviceType) async throws {
-        let tokenData: [String: Any] = [
-            "fcmToken": token,
-            "deviceType": deviceType.rawValue,
-            "lastUpdated": Timestamp(),
-            "isActive": true
-        ]
+    func sendMessage(_ text: String, from parentId: String, to childId: String) async {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         
         do {
-            try await db.collection("users").document(userId).updateData([
-                "fcmTokens.\(deviceType.rawValue)": tokenData
-            ])
-            isTokenRegistered = true
-        } catch {
-            print("❌ Error registering token in Firestore: \(error)")
-            throw MessagingError.tokenRegistrationFailed
-        }
-    }
-    
-    // MARK: - Send Messages
-    func sendMessageToChild(
-        parentId: String,
-        childDeviceId: String,
-        message: String,
-        messageType: MessageType = .reminder
-    ) async throws {
-        // Store message in Firestore
-        let messageData = MessageData(
-            id: UUID().uuidString,
-            parentId: parentId,
-            childDeviceId: childDeviceId,
-            message: message,
-            messageType: messageType,
-            timestamp: Timestamp(),
-            isRead: false,
-            isDelivered: false
-        )
-        
-        do {
-            // Save to Firestore
-            try await db.collection("messages").document(messageData.id).setData(from: messageData)
-            
-            // Get child's FCM token
-            let childToken = try await getChildFCMToken(childDeviceId: childDeviceId)
-            
-            // Send push notification via Cloud Function
-            try await sendPushNotification(
-                to: childToken,
-                message: message,
-                messageType: messageType,
-                messageId: messageData.id
+            let message = Message(
+                id: UUID().uuidString,
+                text: text.trimmingCharacters(in: .whitespacesAndNewlines),
+                senderId: parentId,
+                receiverId: childId,
+                timestamp: Date(),
+                messageType: .text,
+                isRead: false,
+                senderType: .parent
             )
             
-            // Mark as delivered
-            try await db.collection("messages").document(messageData.id).updateData([
-                "isDelivered": true,
-                "deliveredAt": Timestamp()
-            ])
+            // Save to Firebase
+            try await saveMessageToFirebase(message)
             
-            print("✅ Message sent successfully to child device")
+            // Add to local messages
+            messages.append(message)
+            
+            // Send notification to child
+            await sendMessageNotification(message)
+            
+            print("💬 Sent message: \(text)")
             
         } catch {
+            errorMessage = "Failed to send message: \(error.localizedDescription)"
             print("❌ Error sending message: \(error)")
-            throw MessagingError.sendMessageFailed
         }
     }
     
-    func sendMessageToParent(
-        childDeviceId: String,
-        parentId: String,
-        message: String,
-        messageType: MessageType = .response
-    ) async throws {
-        let messageData = MessageData(
-            id: UUID().uuidString,
-            parentId: parentId,
-            childDeviceId: childDeviceId,
-            message: message,
-            messageType: messageType,
-            timestamp: Timestamp(),
-            isRead: false,
-            isDelivered: false
-        )
+    func sendChildMessage(_ text: String, from childId: String, to parentId: String) async {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         
         do {
-            try await db.collection("messages").document(messageData.id).setData(from: messageData)
-            
-            let parentToken = try await getParentFCMToken(parentId: parentId)
-            
-            try await sendPushNotification(
-                to: parentToken,
-                message: message,
-                messageType: messageType,
-                messageId: messageData.id
+            let message = Message(
+                id: UUID().uuidString,
+                text: text.trimmingCharacters(in: .whitespacesAndNewlines),
+                senderId: childId,
+                receiverId: parentId,
+                timestamp: Date(),
+                messageType: .text,
+                isRead: false,
+                senderType: .child
             )
             
-            try await db.collection("messages").document(messageData.id).updateData([
-                "isDelivered": true,
-                "deliveredAt": Timestamp()
-            ])
+            // Save to Firebase
+            try await saveMessageToFirebase(message)
             
-            print("✅ Message sent successfully to parent")
+            // Add to local messages
+            messages.append(message)
+            
+            // Send notification to parent
+            await sendMessageNotification(message)
+            
+            print("💬 Child sent message: \(text)")
             
         } catch {
-            print("❌ Error sending message to parent: \(error)")
-            throw MessagingError.sendMessageFailed
+            errorMessage = "Failed to send message: \(error.localizedDescription)"
+            print("❌ Error sending child message: \(error)")
         }
     }
     
-    // MARK: - Get FCM Tokens
-    private func getChildFCMToken(childDeviceId: String) async throws -> String {
+    func markMessageAsRead(_ messageId: String) async {
         do {
-            let document = try await db.collection("childDevices").document(childDeviceId).getDocument()
-            guard let data = document.data(),
-                  let userId = data["userId"] as? String else {
-                throw MessagingError.deviceNotFound
+            try await db.collection("messages")
+                .document(messageId)
+                .updateData([
+                    "isRead": true,
+                    "readAt": Timestamp()
+                ])
+            
+            // Update local message
+            if let index = messages.firstIndex(where: { $0.id == messageId }) {
+                messages[index].isRead = true
+                messages[index].readAt = Date()
             }
             
-            let userDoc = try await db.collection("users").document(userId).getDocument()
-            guard let userData = userDoc.data(),
-                  let tokens = userData["fcmTokens"] as? [String: [String: Any]],
-                  let childTokenData = tokens["child"] as? [String: Any],
-                  let token = childTokenData["fcmToken"] as? String else {
-                throw MessagingError.tokenNotFound
-            }
-            
-            return token
-        } catch {
-            throw MessagingError.tokenNotFound
-        }
-    }
-    
-    private func getParentFCMToken(parentId: String) async throws -> String {
-        do {
-            let document = try await db.collection("users").document(parentId).getDocument()
-            guard let data = document.data(),
-                  let tokens = data["fcmTokens"] as? [String: [String: Any]],
-                  let parentTokenData = tokens["parent"] as? [String: Any],
-                  let token = parentTokenData["fcmToken"] as? String else {
-                throw MessagingError.tokenNotFound
-            }
-            
-            return token
-        } catch {
-            throw MessagingError.tokenNotFound
-        }
-    }
-    
-    // MARK: - Send Push Notification
-    private func sendPushNotification(
-        to token: String,
-        message: String,
-        messageType: MessageType,
-        messageId: String
-    ) async throws {
-        let payload: [String: Any] = [
-            "to": token,
-            "notification": [
-                "title": messageType.notificationTitle,
-                "body": message,
-                "sound": "default",
-                "badge": 1
-            ],
-            "data": [
-                "messageId": messageId,
-                "messageType": messageType.rawValue,
-                "timestamp": String(Date().timeIntervalSince1970)
-            ],
-            "priority": "high",
-            "content_available": true
-        ]
-        
-        // This would typically be handled by a Cloud Function
-        // For now, we'll create a Firestore document that triggers the Cloud Function
-        try await db.collection("fcmQueue").addDocument(data: payload)
-    }
-    
-    // MARK: - Message History
-    func getMessageHistory(for userId: String, deviceId: String) async throws -> [MessageData] {
-        do {
-            let snapshot = try await db.collection("messages")
-                .whereField("childDeviceId", isEqualTo: deviceId)
-                .order(by: "timestamp", descending: true)
-                .limit(to: 50)
-                .getDocuments()
-            
-            let messages = try snapshot.documents.compactMap { document -> MessageData? in
-                try document.data(as: MessageData.self)
-            }
-            
-            return messages
-        } catch {
-            print("❌ Error fetching message history: \(error)")
-            throw MessagingError.fetchMessagesFailed
-        }
-    }
-    
-    func markMessageAsRead(messageId: String) async throws {
-        do {
-            try await db.collection("messages").document(messageId).updateData([
-                "isRead": true,
-                "readAt": Timestamp()
-            ])
         } catch {
             print("❌ Error marking message as read: \(error)")
         }
     }
     
-    // MARK: - Real-time Message Listening
-    func listenForMessages(
-        childDeviceId: String,
-        completion: @escaping ([MessageData]) -> Void
-    ) -> ListenerRegistration {
-        return db.collection("messages")
-            .whereField("childDeviceId", isEqualTo: childDeviceId)
-            .whereField("isRead", isEqualTo: false)
-            .order(by: "timestamp", descending: true)
-            .addSnapshotListener { snapshot, error in
-                if let error = error {
-                    print("❌ Error listening for messages: \(error)")
-                    return
+    func markAllMessagesAsRead(for userId: String) async {
+        do {
+            let batch = db.batch()
+            
+            let unreadMessages = messages.filter { 
+                $0.receiverId == userId && !$0.isRead 
+            }
+            
+            for message in unreadMessages {
+                let messageRef = db.collection("messages").document(message.id)
+                batch.updateData([
+                    "isRead": true,
+                    "readAt": Timestamp()
+                ], forDocument: messageRef)
+            }
+            
+            try await batch.commit()
+            
+            // Update local messages
+            for index in messages.indices {
+                if messages[index].receiverId == userId && !messages[index].isRead {
+                    messages[index].isRead = true
+                    messages[index].readAt = Date()
                 }
-                
-                guard let documents = snapshot?.documents else { return }
-                
-                let messages = documents.compactMap { document -> MessageData? in
-                    try? document.data(as: MessageData.self)
-                }
-                
-                DispatchQueue.main.async {
-                    completion(messages)
+            }
+            
+            print("✅ Marked \(unreadMessages.count) messages as read")
+            
+        } catch {
+            print("❌ Error marking messages as read: \(error)")
+        }
+    }
+    
+    // MARK: - Typing Indicators
+    
+    func setTypingStatus(isTyping: Bool, userId: String, chatId: String) async {
+        do {
+            try await db.collection("typingIndicators")
+                .document(chatId)
+                .setData([
+                    "isTyping": isTyping,
+                    "userId": userId,
+                    "timestamp": Timestamp()
+                ], merge: true)
+            
+        } catch {
+            print("❌ Error setting typing status: \(error)")
+        }
+    }
+    
+    // MARK: - Private Methods
+    
+    private func setupMessageListener(parentId: String, childId: String) {
+        let chatId = getChatId(parentId: parentId, childId: childId)
+        
+        messageListener = db.collection("messages")
+            .whereField("chatId", isEqualTo: chatId)
+            .order(by: "timestamp", descending: false)
+            .addSnapshotListener { [weak self] snapshot, error in
+                Task { @MainActor in
+                    guard let self = self else { return }
+                    
+                    if let error = error {
+                        self.errorMessage = "Failed to load messages: \(error.localizedDescription)"
+                        print("❌ Error loading messages: \(error)")
+                        return
+                    }
+                    
+                    guard let documents = snapshot?.documents else {
+                        print("📝 No messages found")
+                        return
+                    }
+                    
+                    let newMessages = documents.compactMap { document -> Message? in
+                        try? document.data(as: Message.self)
+                    }
+                    
+                    // Only update if we have new messages
+                    if newMessages.count != self.messages.count {
+                        self.messages = newMessages
+                        print("📝 Loaded \(newMessages.count) messages")
+                    }
                 }
             }
     }
-}
-
-// MARK: - MessagingDelegate
-extension MessagingManager: MessagingDelegate {
-    func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
-        guard let token = fcmToken else { return }
+    
+    private func setupTypingListener(parentId: String, childId: String) {
+        let chatId = getChatId(parentId: parentId, childId: childId)
         
-        DispatchQueue.main.async {
-            self.fcmToken = token
-            print("✅ FCM Token updated: \(token)")
+        typingListener = db.collection("typingIndicators")
+            .document(chatId)
+            .addSnapshotListener { [weak self] snapshot, error in
+                Task { @MainActor in
+                    guard let self = self else { return }
+                    
+                    if let error = error {
+                        print("❌ Error loading typing indicators: \(error)")
+                        return
+                    }
+                    
+                    guard let data = snapshot?.data(),
+                          let isTyping = data["isTyping"] as? Bool,
+                          let typingUserId = data["userId"] as? String else {
+                        self.isParentTyping = false
+                        self.isChildTyping = false
+                        return
+                    }
+                    
+                    // Check if typing indicator is recent (within last 10 seconds)
+                    if let timestamp = data["timestamp"] as? Timestamp {
+                        let typingTime = timestamp.dateValue()
+                        let isRecent = Date().timeIntervalSince(typingTime) < 10
+                        
+                        if isRecent && isTyping {
+                            if typingUserId == parentId {
+                                self.isParentTyping = true
+                                self.isChildTyping = false
+                            } else if typingUserId == childId {
+                                self.isChildTyping = true
+                                self.isParentTyping = false
+                            }
+                        } else {
+                            self.isParentTyping = false
+                            self.isChildTyping = false
+                        }
+                    }
+                }
+            }
+    }
+    
+    private func saveMessageToFirebase(_ message: Message) async throws {
+        let chatId = getChatId(parentId: message.senderId, childId: message.receiverId)
+        
+        let data: [String: Any] = [
+            "id": message.id,
+            "text": message.text,
+            "senderId": message.senderId,
+            "receiverId": message.receiverId,
+            "chatId": chatId,
+            "timestamp": Timestamp(date: message.timestamp),
+            "messageType": message.messageType.rawValue,
+            "isRead": message.isRead,
+            "senderType": message.senderType.rawValue
+        ]
+        
+        try await db.collection("messages")
+            .document(message.id)
+            .setData(data)
+    }
+    
+    private func sendMessageNotification(_ message: Message) async {
+        do {
+            let notificationData: [String: Any] = [
+                "recipientId": message.receiverId,
+                "type": "new_message",
+                "title": message.senderType == .parent ? "Message from Parent" : "Message from Child",
+                "message": message.text,
+                "senderId": message.senderId,
+                "messageId": message.id,
+                "timestamp": Timestamp(),
+                "isRead": false
+            ]
             
-            // Refresh token in Firestore if user is logged in
-            // This should be called from your AuthenticationManager when token updates
+            try await db.collection("notifications").addDocument(data: notificationData)
+            
+            print("🔔 Sent message notification")
+            
+        } catch {
+            print("❌ Error sending message notification: \(error)")
         }
     }
-}
-
-// MARK: - Error Types
-enum MessagingError: LocalizedError {
-    case tokenRetrievalFailed
-    case tokenRegistrationFailed
-    case tokenNotFound
-    case deviceNotFound
-    case sendMessageFailed
-    case fetchMessagesFailed
     
-    var errorDescription: String? {
-        switch self {
-        case .tokenRetrievalFailed:
-            return "Failed to retrieve FCM token"
-        case .tokenRegistrationFailed:
-            return "Failed to register FCM token"
-        case .tokenNotFound:
-            return "FCM token not found"
-        case .deviceNotFound:
-            return "Device not found"
-        case .sendMessageFailed:
-            return "Failed to send message"
-        case .fetchMessagesFailed:
-            return "Failed to fetch messages"
-        }
+    private func getChatId(parentId: String, childId: String) -> String {
+        // Create a consistent chat ID by sorting the IDs
+        let sortedIds = [parentId, childId].sorted()
+        return "\(sortedIds[0])_\(sortedIds[1])"
+    }
+    
+    // MARK: - Utility Methods
+    
+    func getUnreadMessageCount(for userId: String) -> Int {
+        return messages.filter { $0.receiverId == userId && !$0.isRead }.count
+    }
+    
+    func getLastMessage() -> Message? {
+        return messages.last
+    }
+    
+    func clearError() {
+        errorMessage = nil
     }
 }
 
-// MARK: - Supporting Data Models
-struct MessageData: Codable, Identifiable {
+// MARK: - Message Model
+struct Message: Codable, Identifiable {
     let id: String
-    let parentId: String
-    let childDeviceId: String
-    let message: String
+    let text: String
+    let senderId: String
+    let receiverId: String
+    let timestamp: Date
     let messageType: MessageType
-    let timestamp: Timestamp
     var isRead: Bool
-    var isDelivered: Bool
-    let readAt: Timestamp?
-    let deliveredAt: Timestamp?
+    let senderType: SenderType
+    var readAt: Date?
     
-    init(id: String, parentId: String, childDeviceId: String, message: String, messageType: MessageType, timestamp: Timestamp, isRead: Bool, isDelivered: Bool) {
-        self.id = id
-        self.parentId = parentId
-        self.childDeviceId = childDeviceId
-        self.message = message
-        self.messageType = messageType
-        self.timestamp = timestamp
-        self.isRead = isRead
-        self.isDelivered = isDelivered
-        self.readAt = nil
-        self.deliveredAt = nil
+    enum CodingKeys: String, CodingKey {
+        case id, text, senderId, receiverId, timestamp, messageType, isRead, senderType, readAt
+    }
+    
+    var formattedTimestamp: String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: timestamp, relativeTo: Date())
+    }
+    
+    var isFromParent: Bool {
+        return senderType == .parent
     }
 }
 
+// MARK: - Supporting Enums
 enum MessageType: String, Codable, CaseIterable {
-    case reminder = "reminder"
-    case encouragement = "encouragement"
-    case warning = "warning"
-    case response = "response"
-    case custom = "custom"
-    
-    var notificationTitle: String {
-        switch self {
-        case .reminder:
-            return "Reminder from Parent"
-        case .encouragement:
-            return "Message from Parent"
-        case .warning:
-            return "Important Message"
-        case .response:
-            return "Message from Child"
-        case .custom:
-            return "Message"
-        }
-    }
+    case text = "text"
+    case image = "image"
+    case system = "system"
 }
 
-enum DeviceType: String, Codable {
+enum SenderType: String, Codable, CaseIterable {
     case parent = "parent"
     case child = "child"
+    case system = "system"
 }

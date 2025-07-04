@@ -14,6 +14,8 @@ struct SettingsView: View {
     @EnvironmentObject var authManager: AuthenticationManager
     @StateObject private var databaseManager = DatabaseManager.shared
     @StateObject private var pairingManager = PairingManager.shared
+    @StateObject private var appRestrictionManager = AppRestrictionManager()
+    @StateObject private var newAppDetectionManager = NewAppDetectionManager()
     @State private var alertSettings = AlertSettings.defaultSettings
     @State private var showSignOutAlert = false
     @State private var showUnlinkAlert = false
@@ -139,23 +141,24 @@ struct SettingsView: View {
                                 
                                 if alertSettings.isEnabled {
                                     // Individual App Limits
-                                    ForEach(getTopAppsForLimits(), id: \.bundleIdentifier) { app in
+                                    ForEach(getAppsForLimits(), id: \.bundleId) { app in
                                         AppLimitSlider(
                                             appName: app.appName,
-                                            bundleIdentifier: app.bundleIdentifier,
-                                            currentUsage: app.duration,
-                                            timeLimit: bindingForApp(app.bundleIdentifier),
-                                            isDisabled: alertSettings.disabledApps.contains(app.bundleIdentifier),
+                                            bundleIdentifier: app.bundleId,
+                                            currentUsage: app.currentUsage,
+                                            timeLimit: bindingForApp(app.bundleId),
+                                            isDisabled: app.isDisabled,
                                             onDisableToggle: { isDisabled in
-                                                if isDisabled {
-                                                    alertSettings.disabledApps.append(app.bundleIdentifier)
-                                                } else {
-                                                    alertSettings.disabledApps.removeAll { $0 == app.bundleIdentifier }
+                                                Task {
+                                                    if isDisabled {
+                                                        await appRestrictionManager.disableApp(bundleId: app.bundleId)
+                                                    } else {
+                                                        await appRestrictionManager.enableApp(bundleId: app.bundleId)
+                                                    }
                                                 }
-                                                saveAlertSettings()
                                             },
                                             onDelete: {
-                                                deleteApp(app.bundleIdentifier)
+                                                deleteApp(app.bundleId)
                                             }
                                         )
                                     }
@@ -166,7 +169,7 @@ struct SettingsView: View {
                                             HStack {
                                                 Image(systemName: "info.circle.fill")
                                                     .foregroundColor(.orange)
-                                                Text("Recently Deleted Apps")
+                                                Text("Recently Deleted Apps (2 days to restore)")
                                                     .font(.subheadline)
                                                     .fontWeight(.medium)
                                                 Spacer()
@@ -212,10 +215,12 @@ struct SettingsView: View {
                                     Text("Enable Bedtime Mode")
                                         .font(.body)
                                     Spacer()
-                                    Toggle("", isOn: $alertSettings.bedtimeSettings.isEnabled)
-                                        .onChange(of: alertSettings.bedtimeSettings.isEnabled) { _ in
-                                            saveAlertSettings()
+                                                                    Toggle("", isOn: $alertSettings.bedtimeSettings.isEnabled)
+                                    .onChange(of: alertSettings.bedtimeSettings.isEnabled) { _ in
+                                        Task {
+                                            await appRestrictionManager.setBedtimeRestrictions(settings: alertSettings.bedtimeSettings)
                                         }
+                                    }
                                 }
                                 .padding()
                                 .background(Color(.systemGray6))
@@ -272,7 +277,9 @@ struct SettingsView: View {
                                                         let formatter = DateFormatter()
                                                         formatter.dateFormat = "HH:mm"
                                                         alertSettings.bedtimeSettings.startTime = formatter.string(from: newDate)
-                                                        saveAlertSettings()
+                                                        Task {
+                                                            await appRestrictionManager.setBedtimeRestrictions(settings: alertSettings.bedtimeSettings)
+                                                        }
                                                     }
                                                 ), displayedComponents: .hourAndMinute)
                                                 .labelsHidden()
@@ -297,7 +304,9 @@ struct SettingsView: View {
                                                         let formatter = DateFormatter()
                                                         formatter.dateFormat = "HH:mm"
                                                         alertSettings.bedtimeSettings.endTime = formatter.string(from: newDate)
-                                                        saveAlertSettings()
+                                                        Task {
+                                                            await appRestrictionManager.setBedtimeRestrictions(settings: alertSettings.bedtimeSettings)
+                                                        }
                                                     }
                                                 ), displayedComponents: .hourAndMinute)
                                                 .labelsHidden()
@@ -330,7 +339,9 @@ struct SettingsView: View {
                                                         } else {
                                                             alertSettings.bedtimeSettings.enabledDays.removeAll { $0 == day }
                                                         }
-                                                        saveAlertSettings()
+                                                        Task {
+                                                            await appRestrictionManager.setBedtimeRestrictions(settings: alertSettings.bedtimeSettings)
+                                                        }
                                                     }
                                                 )
                                             }
@@ -356,6 +367,75 @@ struct SettingsView: View {
                                     }
                                     .padding()
                                     .background(Color.purple.opacity(0.1))
+                                    .cornerRadius(12)
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                        .padding(.bottom, 24)
+                        
+                        // New App Detection Section
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("New App Detection")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal)
+                            
+                            VStack(spacing: 16) {
+                                if newAppDetectionManager.isLoading {
+                                    HStack {
+                                        ProgressView()
+                                            .scaleEffect(0.8)
+                                        Text("Checking for new apps...")
+                                            .foregroundColor(.secondary)
+                                        Spacer()
+                                    }
+                                    .padding()
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(12)
+                                } else if newAppDetectionManager.newAppDetections.isEmpty {
+                                    HStack {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.green)
+                                        Text("No new apps detected")
+                                            .foregroundColor(.secondary)
+                                        Spacer()
+                                    }
+                                    .padding()
+                                    .background(Color(.systemGray6))
+                                    .cornerRadius(12)
+                                } else {
+                                    ForEach(newAppDetectionManager.newAppDetections) { detection in
+                                        NewAppDetectionRow(
+                                            detection: detection,
+                                            onAddToMonitoring: {
+                                                Task {
+                                                    await newAppDetectionManager.addAppToMonitoring(detection)
+                                                }
+                                            },
+                                            onIgnore: {
+                                                Task {
+                                                    await newAppDetectionManager.ignoreNewApp(detection)
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                                
+                                // Manual Check Button
+                                Button(action: {
+                                    Task {
+                                        await newAppDetectionManager.checkForNewApps()
+                                    }
+                                }) {
+                                    HStack {
+                                        Image(systemName: "magnifyingglass")
+                                        Text("Check for New Apps")
+                                    }
+                                    .foregroundColor(.blue)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.blue.opacity(0.1))
                                     .cornerRadius(12)
                                 }
                             }
@@ -571,10 +651,21 @@ struct SettingsView: View {
     }
     
     // MARK: - App Limits Helper Methods
-    private func getTopAppsForLimits() -> [AppUsage] {
-        // Get the top apps from current screen time data
-        // This would come from your actual screen time data source
-        return []
+    private func getAppsForLimits() -> [AppLimitData] {
+        // Get apps from AppRestrictionManager
+        let appNames = appRestrictionManager.getAllAppNames()
+        return appNames.map { appName in
+            let bundleId = appRestrictionManager.getBundleId(for: appName) ?? ""
+            let currentUsage = appRestrictionManager.getAppUsage(bundleId: bundleId)
+            let isDisabled = appRestrictionManager.isAppRestricted(bundleId: bundleId)
+            
+            return AppLimitData(
+                appName: appName,
+                bundleId: bundleId,
+                currentUsage: currentUsage,
+                isDisabled: isDisabled
+            )
+        }
     }
 
     private func loadAlertSettingsWithDefaults() async {
@@ -602,10 +693,14 @@ struct SettingsView: View {
     
     private func bindingForApp(_ bundleId: String) -> Binding<Double> {
         return Binding(
-            get: { alertSettings.appLimits[bundleId] ?? 2.0 },
+            get: { 
+                let limit = appRestrictionManager.getAppLimit(bundleId: bundleId)
+                return limit / 3600.0 // Convert seconds to hours
+            },
             set: { newValue in
-                alertSettings.appLimits[bundleId] = newValue
-                saveAlertSettings()
+                Task {
+                    await appRestrictionManager.setAppLimit(bundleId: bundleId, timeLimit: newValue * 3600.0)
+                }
             }
         )
     }
@@ -627,19 +722,15 @@ struct SettingsView: View {
             deletedApps.append(bundleId)
         }
         
-        // Remove from app limits
-        alertSettings.appLimits.removeValue(forKey: bundleId)
+        // Remove from AppRestrictionManager
+        Task {
+            await appRestrictionManager.removeAppFromMonitoring(bundleId: bundleId)
+        }
         
-        // Remove from disabled apps if present
-        alertSettings.disabledApps.removeAll { $0 == bundleId }
-        
-        // Save settings
-        saveAlertSettings()
-        
-        // Set up undo timeout (5 minutes)
+        // Set up undo timeout (2 days = 172800 seconds)
         undoTimeout?.invalidate()
-        undoTimeout = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { _ in
-            // Permanently remove from deleted apps after timeout
+        undoTimeout = Timer.scheduledTimer(withTimeInterval: 172800, repeats: false) { _ in
+            // Permanently remove from deleted apps after 2 days
             deletedApps.removeAll { $0 == bundleId }
         }
         
@@ -650,11 +741,10 @@ struct SettingsView: View {
         // Remove from deleted apps
         deletedApps.removeAll { $0 == bundleId }
         
-        // Restore default app limit
-        alertSettings.appLimits[bundleId] = 2.0 // Default 2 hours
-        
-        // Save settings
-        saveAlertSettings()
+        // Restore app with default limit (2 hours)
+        Task {
+            await appRestrictionManager.setAppLimit(bundleId: bundleId, timeLimit: 2.0 * 3600.0)
+        }
         
         // Cancel timeout for this app
         undoTimeout?.invalidate()
@@ -663,18 +753,81 @@ struct SettingsView: View {
     }
     
     private func getAppName(for bundleId: String) -> String? {
-                                // Get app name from actual data source
-        let demoApps = [
-            "com.burbn.instagram": "Instagram",
-            "com.zhiliaoapp.musically": "TikTok",
-            "com.google.ios.youtube": "YouTube",
-            "com.apple.mobilesafari": "Safari",
-            "com.toyopagroup.picaboo": "Snapchat",
-            "com.apple.MobileSMS": "Messages"
-        ]
-        
-        return demoApps[bundleId]
+        return appRestrictionManager.getAppName(for: bundleId)
     }
+}
+
+// MARK: - App Limit Data Model
+struct AppLimitData: Identifiable {
+    let id = UUID()
+    let appName: String
+    let bundleId: String
+    let currentUsage: TimeInterval
+    let isDisabled: Bool
+}
+
+// MARK: - New App Detection Row
+struct NewAppDetectionRow: View {
+    let detection: NewAppDetection
+    let onAddToMonitoring: () -> Void
+    let onIgnore: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(detection.appName)
+                        .font(.headline)
+                    
+                    Text("Detected \(formatDetectionTime(detection.detectedAt))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "app.badge.plus")
+                    .foregroundColor(.orange)
+                    .font(.title2)
+            }
+            
+            HStack(spacing: 12) {
+                Button(action: onAddToMonitoring) {
+                    HStack {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Add to Monitoring")
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.green)
+                    .cornerRadius(8)
+                }
+                
+                Button(action: onIgnore) {
+                    HStack {
+                        Image(systemName: "xmark.circle.fill")
+                        Text("Ignore")
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.red)
+                    .cornerRadius(8)
+                }
+            }
+        }
+        .padding()
+        .background(Color.orange.opacity(0.1))
+        .cornerRadius(12)
+    }
+    
+    private func formatDetectionTime(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+}
 }
 
 // MARK: - Clean App Limit Slider (for Settings)

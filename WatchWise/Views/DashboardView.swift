@@ -12,6 +12,11 @@ struct DashboardView: View {
     @EnvironmentObject var authManager: AuthenticationManager
     @StateObject private var screenTimeManager = ScreenTimeManager()
     @StateObject private var pairingManager = PairingManager.shared
+    @StateObject private var appRestrictionManager = AppRestrictionManager()
+    @StateObject private var notificationManager = NotificationManager()
+    @StateObject private var messagingManager = MessagingManager()
+    @StateObject private var appDeletionManager = AppDeletionManager()
+    @StateObject private var heartbeatManager = HeartbeatManager()
     @State private var showingError = false
     @State private var lastRefresh = Date()
     @State private var selectedDeviceId: String?
@@ -83,6 +88,7 @@ struct DashboardView: View {
                 selectedDeviceId = UserDefaults.standard.string(forKey: "selectedDeviceId")
             }
             loadInitialData()
+            setupStage3Features()
         }
         .onChange(of: selectedDeviceId) { newDeviceId in
             // Save selected device to UserDefaults for SettingsView
@@ -139,6 +145,26 @@ struct DashboardView: View {
         await MainActor.run {
             refreshData()
         }
+    }
+    
+    // MARK: - Stage 3 Features Setup
+    private func setupStage3Features() {
+        guard let currentUser = authManager.currentUser else { return }
+        
+        // Setup notifications
+        notificationManager.setup()
+        notificationManager.connect(userId: currentUser.id)
+        
+        // Setup messaging
+        if let childId = selectedDeviceId ?? pairingManager.pairedChildren.first?.childUserId {
+            messagingManager.connect(parentId: currentUser.id, childId: childId)
+        }
+        
+        // Setup app deletion monitoring
+        appDeletionManager.loadDeletedApps()
+        
+        // Setup heartbeat monitoring
+        heartbeatManager.startMonitoring(parentId: currentUser.id)
     }
 }
 
@@ -385,10 +411,25 @@ struct DataDisplayView: View {
                 TopAppsCard(appUsages: screenTimeData.appUsages)
             }
             
+            // App Restrictions Card
+            AppRestrictionsCard()
+            
             // App Usage Timeline (only show if we have app data with usage ranges)
             if !screenTimeData.appUsages.isEmpty {
                 AppUsageTimelineCard(appUsages: screenTimeData.appUsages)
             }
+            
+            // Notifications Card
+            NotificationsCard()
+            
+            // Messages Card
+            MessagesCard()
+            
+            // App Deletion Card
+            AppDeletionCard()
+            
+            // Device Status Card
+            DeviceStatusCard()
             
             // Data Collection Info
             DataInfoCard(lastUpdated: screenTimeData.date)
@@ -896,6 +937,93 @@ struct UsageSessionRow: View {
     }
 }
 
+// MARK: - App Restrictions Card
+struct AppRestrictionsCard: View {
+    @StateObject private var appRestrictionManager = AppRestrictionManager()
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: "lock.shield.fill")
+                    .foregroundColor(.red)
+                Text("App Restrictions")
+                    .font(.headline)
+                Spacer()
+            }
+            
+            if appRestrictionManager.currentRestrictions.isEmpty {
+                Text("No app restrictions set")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .padding(.vertical)
+            } else {
+                ForEach(Array(appRestrictionManager.currentRestrictions.values.prefix(5)), id: \.id) { restriction in
+                    AppRestrictionRow(restriction: restriction)
+                }
+                
+                if appRestrictionManager.currentRestrictions.count > 5 {
+                    Text("+ \(appRestrictionManager.currentRestrictions.count - 5) more restrictions")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 8)
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - App Restriction Row
+struct AppRestrictionRow: View {
+    let restriction: AppRestriction
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(restriction.bundleId.components(separatedBy: ".").last ?? restriction.bundleId)
+                    .font(.body)
+                    .fontWeight(.medium)
+                
+                HStack {
+                    Text("Used: \(restriction.formattedDailyUsage)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Text("•")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Text("Limit: \(restriction.formattedTimeLimit)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Spacer()
+            
+            // Usage Progress Bar
+            VStack(alignment: .trailing, spacing: 4) {
+                ProgressView(value: restriction.usagePercentage)
+                    .progressViewStyle(LinearProgressViewStyle(tint: restriction.usagePercentage > 0.8 ? .red : .blue))
+                    .frame(width: 60, height: 4)
+                
+                Text("\(Int(restriction.usagePercentage * 100))%")
+                    .font(.caption2)
+                    .foregroundColor(restriction.usagePercentage > 0.8 ? .red : .secondary)
+            }
+            
+            // Status Icon
+            Image(systemName: restriction.isDisabled ? "xmark.circle.fill" : "checkmark.circle.fill")
+                .foregroundColor(restriction.isDisabled ? .red : .green)
+                .font(.title3)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
 // MARK: - Data Info Card
 struct DataInfoCard: View {
     let lastUpdated: Date
@@ -1108,6 +1236,255 @@ struct DevicePickerView: View {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+// MARK: - Stage 3 Dashboard Cards
+
+// MARK: - Notifications Card
+struct NotificationsCard: View {
+    @StateObject private var notificationManager = NotificationManager()
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "bell.fill")
+                    .foregroundColor(.orange)
+                
+                Text("Recent Notifications")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                if notificationManager.unreadCount > 0 {
+                    Text("\(notificationManager.unreadCount)")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Color.red)
+                        .clipShape(Circle())
+                }
+            }
+            
+            if notificationManager.notifications.isEmpty {
+                Text("No notifications yet")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 8)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(notificationManager.notifications.prefix(3)) { notification in
+                        HStack {
+                            Image(systemName: notification.type.icon)
+                                .foregroundColor(Color(notification.type.color))
+                                .frame(width: 16)
+                            
+                            Text(notification.title)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                            
+                            Spacer()
+                            
+                            if !notification.isRead {
+                                Circle()
+                                    .fill(Color.blue)
+                                    .frame(width: 6, height: 6)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - Messages Card
+struct MessagesCard: View {
+    @StateObject private var messagingManager = MessagingManager()
+    @EnvironmentObject var authManager: AuthenticationManager
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "message.fill")
+                    .foregroundColor(.blue)
+                
+                Text("Recent Messages")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                if let lastMessage = messagingManager.getLastMessage() {
+                    Text(lastMessage.formattedTimestamp)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            if messagingManager.messages.isEmpty {
+                Text("No messages yet")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 8)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(messagingManager.messages.suffix(3)) { message in
+                        HStack {
+                            Image(systemName: message.isFromParent ? "person.fill" : "person.crop.circle")
+                                .foregroundColor(message.isFromParent ? .blue : .green)
+                                .frame(width: 16)
+                            
+                            Text(message.text)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                            
+                            Spacer()
+                            
+                            if !message.isRead && message.receiverId == authManager.currentUser?.id {
+                                Circle()
+                                    .fill(Color.blue)
+                                    .frame(width: 6, height: 6)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - App Deletion Card
+struct AppDeletionCard: View {
+    @StateObject private var appDeletionManager = AppDeletionManager()
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "app.badge.minus")
+                    .foregroundColor(.purple)
+                
+                Text("App Deletions")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                if !appDeletionManager.deletedApps.isEmpty {
+                    Text("\(appDeletionManager.deletedApps.count)")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Color.purple)
+                        .clipShape(Circle())
+                }
+            }
+            
+            if appDeletionManager.deletedApps.isEmpty {
+                Text("No apps deleted recently")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 8)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(appDeletionManager.deletedApps.prefix(3)) { deletedApp in
+                        HStack {
+                            Image(systemName: "app.badge.minus")
+                                .foregroundColor(.purple)
+                                .frame(width: 16)
+                            
+                            Text(deletedApp.appName)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                            
+                            Spacer()
+                            
+                            Text(deletedApp.formattedDeletedAt)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - Device Status Card
+struct DeviceStatusCard: View {
+    @StateObject private var heartbeatManager = HeartbeatManager()
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "iphone.radiowaves.left.and.right")
+                    .foregroundColor(.blue)
+                
+                Text("Device Status")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                if !heartbeatManager.childDevices.isEmpty {
+                    let onlineCount = heartbeatManager.childDevices.filter { $0.status == .online }.count
+                    let totalCount = heartbeatManager.childDevices.count
+                    Text("\(onlineCount)/\(totalCount) Online")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                }
+            }
+            
+            if heartbeatManager.childDevices.isEmpty {
+                Text("No devices connected")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 8)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(heartbeatManager.childDevices) { device in
+                        HStack {
+                            Circle()
+                                .fill(device.status == .online ? Color.green : Color.red)
+                                .frame(width: 8, height: 8)
+                            
+                            Text(device.childName)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                            
+                            Spacer()
+                            
+                            Text(device.statusDescription)
+                                .font(.caption)
+                                .foregroundColor(device.status == .online ? .green : .red)
+                        }
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+        .padding(.horizontal)
     }
 }
 

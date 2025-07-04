@@ -21,6 +21,7 @@ class ScreenTimeManager: ObservableObject {
     private let db = Firestore.firestore()
     private let databaseManager = DatabaseManager.shared
     private let deviceActivityManager = DeviceActivityDataManager()
+    private let appRestrictionManager = AppRestrictionManager()
     private var realtimeListeners: [String: ListenerRegistration] = [:]
     private var cacheManager = ScreenTimeCacheManager()
     private var updateTimer: Timer?
@@ -173,6 +174,9 @@ class ScreenTimeManager: ObservableObject {
                     
                     // Cache the updated data
                     await self.cacheManager.cacheScreenTimeData(newData, for: deviceId)
+                    
+                    // Update app usage in AppRestrictionManager
+                    await self.updateAppUsageFromScreenTimeData(newData)
                     
                     // Sync to Firebase in background
                     if let parentId = Auth.auth().currentUser?.uid {
@@ -423,6 +427,15 @@ class ScreenTimeManager: ObservableObject {
             return "\(hours)h \(minutes)m"
         } else {
             return "\(minutes)m"
+        }
+    }
+    
+    // MARK: - App Usage Tracking
+    
+    private func updateAppUsageFromScreenTimeData(_ screenTimeData: ScreenTimeData) async {
+        // Update app usage for each app in the screen time data
+        for appUsage in screenTimeData.appUsages {
+            await appRestrictionManager.updateAppUsage(bundleId: appUsage.bundleIdentifier, usageTime: appUsage.duration)
         }
     }
     

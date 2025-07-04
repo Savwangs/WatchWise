@@ -2,515 +2,329 @@
 //  MessagesView.swift
 //  WatchWise
 //
-//  Created by Savir Wangoo on 6/2/25.
+//  Created by Savir Wangoo on 7/2/25.
 //
 
 import SwiftUI
 import FirebaseFirestore
 import Foundation
-import FirebaseFirestore
 
 struct MessagesView: View {
     @EnvironmentObject var authManager: AuthenticationManager
-    @StateObject private var messagingManager = MessagingManager.shared
-    @StateObject private var notificationManager = NotificationManager.shared
+    @StateObject private var messagingManager = MessagingManager()
+    @StateObject private var pairingManager = PairingManager.shared
     
-    @State private var customMessage = ""
-    @State private var showAlert = false
-    @State private var alertMessage = ""
-    @State private var isLoading = false
-    @State private var selectedMessageType: MessageType = .reminder
-    @State private var pairedDevices: [ChildDevice] = []
-    @State private var selectedDevice: ChildDevice?
-    @State private var messageHistory: [MessageData] = []
-    @State private var messageListener: ListenerRegistration?
-    
-    private let db = Firestore.firestore()
+    @State private var messageText = ""
+    @State private var selectedChildId: String?
+    @State private var isTyping = false
+    @State private var typingTimer: Timer?
     
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Header
-                    headerSection
-                    
-                    // Device Selection (if multiple devices)
-                    if pairedDevices.count > 1 {
-                        deviceSelectionSection
-                    }
-                    
-                    // Message History
-                    if !messageHistory.isEmpty {
-                        messageHistorySection
-                    }
-                    
-                    // Preset Messages
-                    presetMessagesSection
-                    
-                    // Custom Message
-                    customMessageSection
-                    
-                    Spacer(minLength: 50)
+            VStack(spacing: 0) {
+                // Header
+                headerSection
+                
+                // Messages List
+                if messagingManager.isLoading {
+                    loadingView
+                } else if messagingManager.messages.isEmpty {
+                    emptyStateView
+                } else {
+                    messagesListView
                 }
-                .padding(.vertical)
+                
+                // Typing Indicators
+                typingIndicatorView
+                
+                // Message Input
+                messageInputView
             }
             .navigationBarHidden(true)
-            .refreshable {
-                await loadPairedDevices()
-                await loadMessageHistory()
-            }
-        }
-        .task {
-            await setupMessaging()
         }
         .onAppear {
-            setupNotificationObservers()
+            setupMessaging()
         }
         .onDisappear {
-            messageListener?.remove()
-            removeNotificationObservers()
+            messagingManager.disconnect()
         }
-        .alert("Message Status", isPresented: $showAlert) {
-            Button("OK") { }
+        .alert("Error", isPresented: .constant(messagingManager.errorMessage != nil)) {
+            Button("OK") {
+                messagingManager.clearError()
+            }
         } message: {
-            Text(alertMessage)
+            Text(messagingManager.errorMessage ?? "")
         }
     }
     
     // MARK: - View Components
+    
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: 12) {
             HStack {
-                Text("Send a Quick Message")
+                Text("Messages")
                     .font(.title2)
                     .fontWeight(.bold)
                 
                 Spacer()
                 
-                // Connection status indicator
-                connectionStatusIndicator
-            }
-            
-            Text("Send gentle reminders or encouragement to your child's device")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-        }
-        .padding(.horizontal)
-    }
-    
-    private var connectionStatusIndicator: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(pairedDevices.isEmpty ? Color.red : Color.green)
-                .frame(width: 8, height: 8)
-            
-            Text("Connected") //pairedDevices.isEmpty ? "Not Connected" :
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-    }
-    
-    private var deviceSelectionSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Send to Device")
-                    .font(.headline)
-                Spacer()
-            }
-            .padding(.horizontal)
-            
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(pairedDevices) { device in
-                        DeviceSelectionCard(
-                            device: device,
-                            isSelected: selectedDevice?.id == device.id,
-                            onSelect: { selectedDevice = device }
-                        )
-                    }
-                }
-                .padding(.horizontal)
-            }
-        }
-    }
-    
-    private var messageHistorySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Recent Messages")
-                    .font(.headline)
-                Spacer()
-                Button("Clear All") {
-                    clearMessageHistory()
-                }
-                .font(.caption)
-                .foregroundColor(.blue)
-            }
-            .padding(.horizontal)
-            
-            LazyVStack(spacing: 8) {
-                ForEach(messageHistory.prefix(5)) { message in
-                    MessageHistoryCard(message: message)
-                }
-            }
-        }
-    }
-    
-    private var presetMessagesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Quick Messages")
-                    .font(.headline)
-                Spacer()
-            }
-            .padding(.horizontal)
-            
-            // Message Type Selector
-            Picker("Message Type", selection: $selectedMessageType) {
-                ForEach(MessageType.allCases.filter { $0 != .response }, id: \.self) { type in
-                    Text(type.rawValue.capitalized)
-                        .tag(type)
-                }
-            }
-            .pickerStyle(SegmentedPickerStyle())
-            .padding(.horizontal)
-            
-            LazyVStack(spacing: 8) {
-                ForEach(getPresetMessages(for: selectedMessageType)) { message in
-                    MessageCard(
-                        message: message,
-                        isLoading: isLoading,
-                        onSend: { sendMessage(message.text, type: selectedMessageType) }
-                    )
-                }
-            }
-        }
-    }
-    
-    private var customMessageSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Custom Message")
-                    .font(.headline)
-                Spacer()
-            }
-            .padding(.horizontal)
-            
-            VStack(spacing: 12) {
-                TextField("Type your message...", text: $customMessage, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(3...6)
-                
-                Button(action: { sendMessage(customMessage, type: .custom) }) {
-                    if isLoading {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    } else {
-                        HStack {
-                            Image(systemName: "paperplane.fill")
-                            Text("Send Message")
-                        }
-                    }
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding()
-                                        .background((customMessage.isEmpty || String(describing: customMessage).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading) ? Color.gray : Color.blue)
-                .cornerRadius(12)
-                .disabled(customMessage.isEmpty || String(describing: customMessage).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading || selectedDevice == nil)
-            }
-            .padding(.horizontal)
-        }
-    }
-    
-    // MARK: - Functions
-    private func setupMessaging() async {
-        await loadPairedDevices()
-        /* PRODUCTION CODE - UNCOMMENT WHEN READY FOR PRODUCTION
-        if let userId = authManager.currentUser?.id {
-            do {
-                try await messagingManager.retrieveFCMToken(for: userId, deviceType: .parent)
-                await loadMessageHistory()
-                setupMessageListener()
-            } catch {
-                print("❌ Error setting up messaging: \(error)")
-                await MainActor.run {
-                    alertMessage = "Failed to setup messaging: \(error.localizedDescription)"
-                    showAlert = true
-                }
-            }
-        }
-         */
-    }
-    
-    private func loadPairedDevices() async {
-        guard let parentId = authManager.currentUser?.id else { return }
-        
-        do {
-            let snapshot = try await db.collection("childDevices")
-                .whereField("parentId", isEqualTo: parentId)
-                .whereField("isActive", isEqualTo: true)
-                .getDocuments()
-            
-            let devices = try snapshot.documents.compactMap { document -> ChildDevice? in
-                try document.data(as: ChildDevice.self)
-            }
-            
-            await MainActor.run {
-                self.pairedDevices = devices
-                if self.selectedDevice == nil && !devices.isEmpty {
-                    self.selectedDevice = devices.first
-                }
-            }
-            
-        } catch {
-            print("❌ Error loading paired devices: \(error)")
-            await MainActor.run {
-                alertMessage = "Failed to load paired devices"
-                showAlert = true
-            }
-        }
-    }
-    
-    private func loadMessageHistory() async {
-        guard let device = selectedDevice,
-              let userId = authManager.currentUser?.id else { return }
-        
-        do {
-            let messages = try await messagingManager.getMessageHistory(for: userId, deviceId: device.id ?? "")
-            await MainActor.run {
-                self.messageHistory = messages
-            }
-        } catch {
-            print("❌ Error loading message history: \(error)")
-        }
-    }
-    
-    private func setupMessageListener() {
-        guard let device = selectedDevice else { return }
-        
-        messageListener?.remove()
-        messageListener = messagingManager.listenForMessages(childDeviceId: device.id ?? "") { messages in
-            self.messageHistory = messages
-        }
-    }
-    
-    private func sendMessage(_ messageText: String, type: MessageType) {
-        guard let parentId = authManager.currentUser?.id,
-              let device = selectedDevice else {
-            alertMessage = "Please select a device to send message to"
-            showAlert = true
-            return
-        }
-        
-        // Ensure we're working with a string
-        let safeMessageText = String(describing: messageText).trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        guard !safeMessageText.isEmpty else {
-            alertMessage = "Please enter a message"
-            showAlert = true
-            return
-        }
-        
-        isLoading = true
-        
-        Task {
-            do {
-                try await messagingManager.sendMessageToChild(
-                    parentId: parentId,
-                    childDeviceId: device.id ?? "",
-                    message: messageText,
-                    messageType: type
-                )
-                
-                await MainActor.run {
-                    isLoading = false
-                    alertMessage = "Message sent successfully!"
-                    showAlert = true
-                    if type == .custom {
-                        customMessage = ""
-                    }
-                }
-                
-                // Refresh message history
-                await loadMessageHistory()
-                
-            } catch {
-                await MainActor.run {
-                    isLoading = false
-                    alertMessage = "Failed to send message: \(error.localizedDescription)"
-                    showAlert = true
-                }
-            }
-        }
-    }
-    
-    private func clearMessageHistory() {
-        messageHistory.removeAll()
-        // Note: Badge clearing is handled by the system
-    }
-    
-    private func setupNotificationObservers() {
-        // Note: Notification observers are handled by the main app delegate
-        // Real-time updates are handled by Firestore listeners
-    }
-    
-    private func removeNotificationObservers() {
-        // Note: No observers to remove in this implementation
-    }
-    
-    private func getPresetMessages(for type: MessageType) -> [QuickMessage] {
-        switch type {
-        case .reminder:
-            return QuickMessage.reminderMessages
-        case .encouragement:
-            return QuickMessage.encouragementMessages
-        case .warning:
-            return QuickMessage.warningMessages
-        default:
-            return QuickMessage.presetMessages
-        }
-    }
-}
-
-// MARK: - Supporting Views
-struct DeviceSelectionCard: View {
-    let device: ChildDevice
-    let isSelected: Bool
-    let onSelect: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "iphone")
-                .font(.title2)
-                .foregroundColor(isSelected ? .white : .blue)
-            
-            Text(device.deviceName ?? "Unknown Device")
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(isSelected ? .white : .primary)
-                .lineLimit(1)
-        }
-        .frame(width: 80, height: 60)
-        .background(isSelected ? Color.blue : Color(.systemGray6))
-        .cornerRadius(12)
-        .onTapGesture {
-            onSelect()
-        }
-    }
-}
-
-struct MessageHistoryCard: View {
-    let message: MessageData
-    
-    var body: some View {
-        HStack(spacing: 12) {
-            VStack {
-                Circle()
-                    .fill(message.isDelivered ? Color.green : Color.orange)
-                    .frame(width: 8, height: 8)
-                Spacer()
-            }
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(message.message)
-                    .font(.body)
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
-                
-                HStack {
-                    Text(message.messageType.rawValue.capitalized)
-                        .font(.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(Color(.systemGray5))
-                        .cornerRadius(4)
+                // Connection status
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(messagingManager.isConnected ? Color.green : Color.red)
+                        .frame(width: 8, height: 8)
                     
-                    Spacer()
-                    
-                    Text(message.timestamp.dateValue(), style: .time)
+                    Text(messagingManager.isConnected ? "Connected" : "Disconnected")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
             
-            VStack {
-                Image(systemName: message.isRead ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(message.isRead ? .green : .gray)
-                Spacer()
+            // Child selector
+            if !pairingManager.pairedChildren.isEmpty {
+                HStack {
+                    Text("Chat with:")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    Picker("Select Child", selection: $selectedChildId) {
+                        ForEach(pairingManager.pairedChildren, id: \.childUserId) { child in
+                            Text(child.childName)
+                                .tag(Optional(child.childUserId))
+                        }
+                    }
+                    .pickerStyle(MenuPickerStyle())
+                    
+                    Spacer()
+                }
             }
         }
         .padding()
         .background(Color(.systemGray6))
-        .cornerRadius(12)
-        .padding(.horizontal)
+    }
+    
+    private var loadingView: some View {
+        VStack {
+            ProgressView()
+                .scaleEffect(1.2)
+            Text("Loading messages...")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .padding(.top)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
+    private var emptyStateView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "message.circle")
+                .font(.system(size: 60))
+                .foregroundColor(.gray)
+            
+            Text("No Messages Yet")
+                .font(.title3)
+                .fontWeight(.medium)
+            
+            Text("Start a conversation with your child by sending a message below.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
+    private var messagesListView: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(messagingManager.messages) { message in
+                        MessageBubble(message: message, isFromCurrentUser: message.senderId == authManager.currentUser?.id)
+                            .id(message.id)
+                    }
+                }
+                .padding()
+            }
+            .onChange(of: messagingManager.messages.count) { _ in
+                if let lastMessage = messagingManager.messages.last {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                    }
+                }
+            }
+        }
+    }
+    
+    private var typingIndicatorView: some View {
+        Group {
+            if messagingManager.isChildTyping {
+                HStack {
+                    Text("Child is typing...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                    
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+            } else if messagingManager.isParentTyping {
+                HStack {
+                    Spacer()
+                    
+                    Text("You are typing...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal)
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+    
+    private var messageInputView: some View {
+        VStack(spacing: 0) {
+            Divider()
+            
+            HStack(spacing: 12) {
+                TextField("Type a message...", text: $messageText, axis: .vertical)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .lineLimit(1...4)
+                    .onChange(of: messageText) { _ in
+                        handleTyping()
+                    }
+                
+                Button(action: sendMessage) {
+                    Image(systemName: "paperplane.fill")
+                        .foregroundColor(.white)
+                        .frame(width: 32, height: 32)
+                        .background(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.blue)
+                        .clipShape(Circle())
+                }
+                .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding()
+        }
+        .background(Color(.systemBackground))
+    }
+    
+    // MARK: - Methods
+    
+    private func setupMessaging() {
+        guard let currentUser = authManager.currentUser,
+              let childId = selectedChildId ?? pairingManager.pairedChildren.first?.childUserId else {
+            return
+        }
+        
+        messagingManager.connect(parentId: currentUser.id, childId: childId)
+    }
+    
+    private func sendMessage() {
+        guard let currentUser = authManager.currentUser,
+              let childId = selectedChildId ?? pairingManager.pairedChildren.first?.childUserId,
+              !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+        
+        let message = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+        messageText = ""
+        
+        Task {
+            await messagingManager.sendMessage(message, from: currentUser.id, to: childId)
+        }
+        
+        // Stop typing indicator
+        stopTyping()
+    }
+    
+    private func handleTyping() {
+        guard let currentUser = authManager.currentUser,
+              let childId = selectedChildId ?? pairingManager.pairedChildren.first?.childUserId else {
+            return
+        }
+        
+        // Start typing indicator
+        if !isTyping {
+            isTyping = true
+            Task {
+                await messagingManager.setTypingStatus(isTyping: true, userId: currentUser.id, chatId: getChatId(parentId: currentUser.id, childId: childId))
+            }
+        }
+        
+        // Reset typing timer
+        typingTimer?.invalidate()
+        typingTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
+            stopTyping()
+        }
+    }
+    
+    private func stopTyping() {
+        guard let currentUser = authManager.currentUser,
+              let childId = selectedChildId ?? pairingManager.pairedChildren.first?.childUserId else {
+            return
+        }
+        
+        isTyping = false
+        Task {
+            await messagingManager.setTypingStatus(isTyping: false, userId: currentUser.id, chatId: getChatId(parentId: currentUser.id, childId: childId))
+        }
+    }
+    
+    private func getChatId(parentId: String, childId: String) -> String {
+        let sortedIds = [parentId, childId].sorted()
+        return "\(sortedIds[0])_\(sortedIds[1])"
     }
 }
 
-struct MessageCard: View {
-    let message: QuickMessage
-    let isLoading: Bool
-    let onSend: () -> Void
+// MARK: - Message Bubble View
+struct MessageBubble: View {
+    let message: Message
+    let isFromCurrentUser: Bool
     
     var body: some View {
         HStack {
-            Text(message.emoji)
-                .font(.title2)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(message.text)
-                    .font(.body)
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.leading)
-            }
-            
-            Spacer()
-            
-            Button(action: onSend) {
-                if isLoading {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .blue))
-                        .scaleEffect(0.8)
-                } else {
-                    Image(systemName: "paperplane.fill")
-                        .foregroundColor(.blue)
+            if isFromCurrentUser {
+                Spacer(minLength: 50)
+                
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(message.text)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                    
+                    HStack(spacing: 4) {
+                        Text(message.formattedTimestamp)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        
+                        if message.isRead {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.caption2)
+                                .foregroundColor(.blue)
+                        } else {
+                            Image(systemName: "checkmark.circle")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(message.text)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color(.systemGray5))
+                        .foregroundColor(.primary)
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
+                    
+                    Text(message.formattedTimestamp)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer(minLength: 50)
             }
-            .disabled(isLoading)
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
-        .padding(.horizontal)
     }
-}
-
-// MARK: - Extended QuickMessage
-extension QuickMessage {
-    static let reminderMessages = [
-        QuickMessage(text: "I see you've been on TikTok for a while, take a break?", emoji: "⏰"),
-        QuickMessage(text: "Remember our screen time agreement - time for a break!", emoji: "📱"),
-        QuickMessage(text: "Morning! Let's start the day screen-free for 30 minutes.", emoji: "🌅"),
-        QuickMessage(text: "It's getting late - time to put the phone away for bed.", emoji: "🌙")
-    ]
-    
-    static let encouragementMessages = [
-        QuickMessage(text: "Doing great today! Screen time is looking healthy 👏", emoji: "🎉"),
-        QuickMessage(text: "I'm proud of how you're managing your screen time!", emoji: "⭐"),
-        QuickMessage(text: "You've been so good with breaks today - keep it up!", emoji: "💪"),
-        QuickMessage(text: "Love seeing you balance screen time and other activities!", emoji: "🌟")
-    ]
-    
-    static let warningMessages = [
-        QuickMessage(text: "You've reached your daily limit for this app.", emoji: "⚠️"),
-        QuickMessage(text: "Time to take a longer break from screens.", emoji: "🚫"),
-        QuickMessage(text: "We agreed on limits - please respect our agreement.", emoji: "⏱️"),
-        QuickMessage(text: "Let's talk about your screen time when you're free.", emoji: "💭")
-    ]
-}
-
-
-#Preview {
-    MessagesView()
-        .environmentObject(AuthenticationManager())
-}
+} 

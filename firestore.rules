@@ -55,22 +55,62 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
     
+    // App restrictions - only the parent can access their restrictions
+    match /appRestrictions/{document} {
+      allow create: if isAuthenticated();
+      allow read, write: if isAuthenticated() && 
+        resource.data.parentId == request.auth.uid;
+      allow delete: if isAuthenticated() && 
+        resource.data.parentId == request.auth.uid;
+    }
+    
     // Notifications - only the parent can read their notifications
     match /notifications/{notificationId} {
       allow create: if isAuthenticated();
       allow read, write: if isAuthenticated() && 
-        resource.data.parentUserId == request.auth.uid;
+        resource.data.parentId == request.auth.uid;
       allow delete: if isAuthenticated() && 
-        resource.data.parentUserId == request.auth.uid;
+        resource.data.parentId == request.auth.uid;
     }
     
-    // New app detections - allow authenticated users to create, but only relevant parties can read
+    // New app detections - only the parent can access their detections
     match /newAppDetections/{detectionId} {
       allow create: if isAuthenticated();
       allow read, write: if isAuthenticated() && 
-        resource.data.deviceId == request.auth.uid;
+        resource.data.parentId == request.auth.uid;
       allow delete: if isAuthenticated() && 
-        resource.data.deviceId == request.auth.uid;
+        resource.data.parentId == request.auth.uid;
+    }
+    
+    // App deletions - only the parent can access their deletion records
+    match /deletedApps/{document} {
+      allow create: if isAuthenticated();
+      allow read, write: if isAuthenticated() && 
+        resource.data.parentId == request.auth.uid;
+      allow delete: if isAuthenticated() && 
+        resource.data.parentId == request.auth.uid;
+    }
+    
+    // Typing indicators - allow chat participants to access
+    match /typingIndicators/{chatId} {
+      allow create, read, write: if isAuthenticated();
+    }
+    
+    // Heartbeats - allow users to update their own heartbeat, parents to read children's heartbeats
+    match /heartbeats/{userId} {
+      allow create, update: if isAuthenticated() && request.auth.uid == userId;
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        exists(/databases/$(database)/documents/parentChildRelationships/{relationshipId}) &&
+        (resource.data.parentUserId == request.auth.uid || resource.data.childUserId == request.auth.uid)
+      );
+    }
+    
+    // Security logs - read-only for authenticated users
+    match /securityLogs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false; // No updates or deletions allowed
     }
     
     // Test collection (for connection testing)
