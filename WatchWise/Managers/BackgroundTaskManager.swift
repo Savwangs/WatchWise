@@ -24,6 +24,11 @@ class BackgroundTaskManager: ObservableObject {
     // MARK: - Background Task Registration
     
     private func registerBackgroundTasks() {
+        #if targetEnvironment(simulator)
+        // Skip background task registration in simulator
+        print("⚠️ Skipping background task registration in simulator")
+        return
+        #else
         // Register daily reset task
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: "com.watchwise.dailyreset",
@@ -39,13 +44,20 @@ class BackgroundTaskManager: ObservableObject {
         ) { task in
             self.handleDataSync(task: task as! BGAppRefreshTask)
         }
+        #endif
     }
     
     // MARK: - Schedule Background Tasks
     
     func scheduleBackgroundTasks() {
+        #if targetEnvironment(simulator)
+        // Skip background task scheduling in simulator
+        print("⚠️ Skipping background task scheduling in simulator")
+        return
+        #else
         scheduleDailyReset()
         scheduleDataSync()
+        #endif
     }
     
     private func scheduleDailyReset() {

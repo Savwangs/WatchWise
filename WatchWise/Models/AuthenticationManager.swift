@@ -9,6 +9,7 @@ import Foundation
 import FirebaseAuth
 import FirebaseFirestore
 import AuthenticationServices
+import CryptoKit
 
 // Custom User model to hold our app-specific data
 struct AppUser {
@@ -230,16 +231,111 @@ class AuthenticationManager: ObservableObject {
         }
     }
     
-    // MARK: - Apple Sign In (Placeholder for Day 14)
+    // MARK: - Apple Sign In Implementation
+    
+    // Store the current nonce for Apple Sign In
+    private var currentNonce: String?
     
     func handleAppleSignIn(authorization: ASAuthorization, completion: @escaping (Result<Void, Error>) -> Void) {
-        // This will be fully implemented on Day 14 with Apple Developer Account
-        completion(.failure(NSError(domain: "AppleSignIn", code: -1, userInfo: [NSLocalizedDescriptionKey: "Apple Sign In will be available on Day 14"])))
+        print("🍎 Starting Apple Sign In process")
+        
+        guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+            let error = NSError(domain: "AppleSignIn", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid Apple ID credential"])
+            completion(.failure(error))
+            return
+        }
+        
+        guard let appleIDToken = appleIDCredential.identityToken else {
+            let error = NSError(domain: "AppleSignIn", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unable to fetch identity token"])
+            completion(.failure(error))
+            return
+        }
+        
+        guard let idTokenString = String(data: appleIDToken, encoding: .utf8) else {
+            let error = NSError(domain: "AppleSignIn", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unable to serialize token string"])
+            completion(.failure(error))
+            return
+        }
+        
+        guard let nonce = currentNonce else {
+            let error = NSError(domain: "AppleSignIn", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid nonce"])
+            completion(.failure(error))
+            return
+        }
+        
+        // Create Firebase credential
+        let credential = OAuthProvider.credential(withProviderID: "apple.com", idToken: idTokenString, rawNonce: nonce)
+        
+        // Sign in with Firebase
+        Auth.auth().signIn(with: credential) { [weak self] result, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("🔥 Apple Sign In error: \(error)")
+                    completion(.failure(error))
+                } else if let firebaseUser = result?.user {
+                    print("✅ Apple Sign In successful: \(firebaseUser.uid)")
+                    
+                    // Check if this is a new user or existing user
+                    self?.checkIfNewUser(firebaseUser: firebaseUser) { isNewUser in
+                        DispatchQueue.main.async {
+                            if isNewUser {
+                                print("🆕 New Apple Sign In user - showing user type selection")
+                                self?.isNewSignUp = true
+                                // Create user profile and show user type selection
+                                self?.createUserProfile(firebaseUser: firebaseUser, completion: completion)
+                            } else {
+                                print("👤 Existing Apple Sign In user - direct sign in")
+                                self?.isNewSignUp = false
+                                // Load existing user profile
+                                self?.loadUserProfile(userId: firebaseUser.uid)
+                                completion(.success(()))
+                            }
+                        }
+                    }
+                } else {
+                    let error = NSError(domain: "AppleSignIn", code: -1, userInfo: [NSLocalizedDescriptionKey: "Sign in failed"])
+                    completion(.failure(error))
+                }
+            }
+        }
     }
     
-    private func getCurrentNonce() -> String? {
-        // This will be implemented on Day 14
-        return UUID().uuidString
+    func getCurrentNonce() -> String {
+        // Generate a random nonce for Apple Sign In
+        let letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        let rawNonce = String((0..<32).map { _ in letters.randomElement()! })
+        
+        // Store the raw nonce for later verification
+        currentNonce = rawNonce
+        
+        // Return SHA256 hash of the nonce (this is what Apple expects)
+        return sha256(rawNonce)
+    }
+    
+    private func sha256(_ input: String) -> String {
+        let inputData = Data(input.utf8)
+        let hashedData = SHA256.hash(data: inputData)
+        let hashString = hashedData.compactMap {
+            String(format: "%02x", $0)
+        }.joined()
+        return hashString
+    }
+    
+    private func checkIfNewUser(firebaseUser: FirebaseAuth.User, completion: @escaping (Bool) -> Void) {
+        // Check if user profile exists in Firestore
+        firebaseManager.usersCollection.document(firebaseUser.uid).getDocument { snapshot, error in
+            if let error = error {
+                print("🔥 Error checking user profile: \(error)")
+                // If error, assume new user
+                completion(true)
+                return
+            }
+            
+            // If document doesn't exist or has no data, it's a new user
+            let isNewUser = snapshot?.exists == false || snapshot?.data() == nil
+            print("🔍 User profile check - isNewUser: \(isNewUser)")
+            completion(isNewUser)
+        }
     }
     
     func signOut() {

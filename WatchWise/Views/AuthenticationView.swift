@@ -115,10 +115,11 @@ struct AuthenticationView: View {
                             .cornerRadius(12)
                             .disabled(isLoading || !isFormValid)
                             
-                            // Sign in with Apple (placeholder for Day 14)
+                            // Sign in with Apple (works for both sign in and sign up)
                             SignInWithAppleButton(
                                 onRequest: { request in
                                     request.requestedScopes = [.fullName, .email]
+                                    request.nonce = authManager.getCurrentNonce()
                                 },
                                 onCompletion: { result in
                                     handleAppleSignIn(result: result)
@@ -126,10 +127,12 @@ struct AuthenticationView: View {
                             )
                             .frame(height: 50)
                             .cornerRadius(12)
-                            .onTapGesture {
-                                handleAppleSignInButtonTap()
-                            }
-                            .opacity(0.7)
+                            
+                            // Explanation text
+                            Text("Apple Sign In follows the same flow as email/password")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
                         }
                         .padding(.horizontal, 32)
                         
@@ -162,29 +165,48 @@ struct AuthenticationView: View {
     
     private var isFormValid: Bool {
         if isSignUp {
-            return !email.isEmpty &&
+            let isValid = !email.isEmpty &&
                    !password.isEmpty &&
                    !confirmPassword.isEmpty &&
                    password == confirmPassword &&
                    password.count >= 6
+            print("🔍 Form validation for sign up: \(isValid)")
+            print("   - Email: '\(email)' (empty: \(email.isEmpty))")
+            print("   - Password: '\(password)' (empty: \(password.isEmpty), length: \(password.count))")
+            print("   - Confirm: '\(confirmPassword)' (empty: \(confirmPassword.isEmpty))")
+            print("   - Match: \(password == confirmPassword)")
+            return isValid
         } else {
-            return !email.isEmpty && !password.isEmpty
+            let isValid = !email.isEmpty && !password.isEmpty
+            print("🔍 Form validation for sign in: \(isValid)")
+            return isValid
         }
     }
     
     private func handleAuthentication() {
+        print("🔍 handleAuthentication called - isSignUp: \(isSignUp)")
+        print("🔍 Form validation: \(isFormValid)")
+        print("🔍 Email: '\(email)'")
+        print("🔍 Password: '\(password)'")
+        if isSignUp {
+            print("🔍 Confirm Password: '\(confirmPassword)'")
+        }
+        
         isLoading = true
         
         if isSignUp {
+            print("🚀 Starting sign up process...")
             // This is a new user - show user type selection after successful account creation
             authManager.signUp(email: email, password: password) { result in
                 DispatchQueue.main.async {
                     isLoading = false
                     switch result {
                     case .success:
+                        print("✅ Sign up successful, showing user type selection")
                         // Show user type selection for new accounts ONLY
                         showUserTypeSelection = true
                     case .failure(let error):
+                        print("❌ Sign up failed: \(error.localizedDescription)")
                         alertMessage = error.localizedDescription
                         showAlert = true
                     }
@@ -212,12 +234,20 @@ struct AuthenticationView: View {
     private func handleAppleSignIn(result: Result<ASAuthorization, Error>) {
         switch result {
         case .success(let authorization):
-            // Handle Apple Sign In - treat as new user and show selection
+            // Handle Apple Sign In - follows same logic as email/password
             authManager.handleAppleSignIn(authorization: authorization) { result in
                 DispatchQueue.main.async {
                     switch result {
                     case .success:
-                        showUserTypeSelection = true
+                        // Check if this is a new user (needs user type selection)
+                        if authManager.isNewSignUp {
+                            print("🆕 New Apple Sign In user - showing user type selection")
+                            showUserTypeSelection = true
+                        } else {
+                            print("👤 Existing Apple Sign In user - checking for child account")
+                            // Check if this is a returning child user
+                            self.checkExistingChildAccount()
+                        }
                     case .failure(let error):
                         alertMessage = "Apple Sign In failed: \(error.localizedDescription)"
                         showAlert = true
@@ -230,11 +260,7 @@ struct AuthenticationView: View {
         }
     }
     
-    // Add this method to handle Apple Sign In button tap
-    private func handleAppleSignInButtonTap() {
-        alertMessage = "Apple Sign In will be available on Day 14 when we set up the Apple Developer account. For now, please use email/password authentication."
-        showAlert = true
-    }
+
     
     private func resendEmailVerification() {
         authManager.resendEmailVerification { result in

@@ -150,9 +150,15 @@ class ActivityMonitoringManager: ObservableObject {
     }
 
     private func setupBackgroundTasks() {
+        #if targetEnvironment(simulator)
+        // Skip background task setup in simulator
+        print("⚠️ Skipping background task setup in simulator")
+        return
+        #else
         // Background tasks are registered in AppDelegate
         // This method is just for initialization
         print("✅ Background task setup completed")
+        #endif
     }
     
     // MARK: - Heartbeat System (Child Devices Only)
@@ -620,6 +626,11 @@ class ActivityMonitoringManager: ObservableObject {
     // MARK: - Background Heartbeat System
     
     private func scheduleBackgroundHeartbeat() {
+        #if targetEnvironment(simulator)
+        // Skip background heartbeat scheduling in simulator
+        print("⚠️ Skipping background heartbeat scheduling in simulator")
+        return
+        #else
         // Check if background tasks are available
         guard UIApplication.shared.backgroundRefreshStatus == .available else {
             print("⚠️ Background refresh not available - skipping background task scheduling")
@@ -646,6 +657,7 @@ class ActivityMonitoringManager: ObservableObject {
         } catch {
             print("❌ Failed to schedule background tasks: \(error)")
         }
+        #endif
     }
     
     func handleBackgroundHeartbeat(task: BGProcessingTask) {
@@ -734,7 +746,9 @@ class ActivityMonitoringManager: ObservableObject {
         
         Task {
             await sendHeartbeat()
+            #if !targetEnvironment(simulator)
             scheduleBackgroundHeartbeat()
+            #endif
         }
     }
     

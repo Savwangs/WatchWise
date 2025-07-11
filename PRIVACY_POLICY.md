@@ -147,8 +147,6 @@ Your continued use of the app after changes become effective constitutes accepta
 If you have questions about this Privacy Policy or our privacy practices, contact us at:
 
 **Email**: privacy@watchwise.app
-**Address**: [Your Business Address]
-**Phone**: [Your Phone Number]
 
 ### 11.2 Data Requests
 For data access, modification, or deletion requests:

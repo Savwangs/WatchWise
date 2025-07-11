@@ -223,10 +223,16 @@ class HeartbeatManager: ObservableObject {
     // MARK: - Background Task Support
     
     func registerBackgroundTasks() {
+        #if targetEnvironment(simulator)
+        // Skip background task registration in simulator
+        print("⚠️ Skipping heartbeat background task registration in simulator")
+        return
+        #else
         // Register background task for heartbeat
         BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.watchwise.heartbeat", using: nil) { task in
             self.handleBackgroundHeartbeat(task: task as! BGAppRefreshTask)
         }
+        #endif
     }
     
     private func handleBackgroundHeartbeat(task: BGAppRefreshTask) {
@@ -247,6 +253,11 @@ class HeartbeatManager: ObservableObject {
     }
     
     private func scheduleBackgroundHeartbeat() {
+        #if targetEnvironment(simulator)
+        // Skip background heartbeat scheduling in simulator
+        print("⚠️ Skipping heartbeat background scheduling in simulator")
+        return
+        #else
         let request = BGAppRefreshTaskRequest(identifier: "com.watchwise.heartbeat")
         request.earliestBeginDate = Date(timeIntervalSinceNow: heartbeatInterval)
         
@@ -255,6 +266,7 @@ class HeartbeatManager: ObservableObject {
         } catch {
             print("❌ Could not schedule background heartbeat: \(error)")
         }
+        #endif
     }
     
     private func getCurrentDeviceInfo() async -> DeviceInfo {

@@ -87,6 +87,11 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     }
     
     private func configureBackgroundTasks() {
+        #if targetEnvironment(simulator)
+        // Skip background task registration in simulator
+        print("⚠️ Skipping background task registration in simulator")
+        return
+        #else
         // Register heartbeat background task
         BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.watchwise.heartbeat", using: nil) { task in
             print("🔄 Background heartbeat task received in AppDelegate")
@@ -102,6 +107,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         }
         
         print("✅ Background tasks configured in AppDelegate")
+        #endif
     }
 }
 
@@ -194,7 +200,9 @@ struct WatchWiseApp: App {
             notificationManager.connect(userId: currentUser.uid)
             
             // Start background processing
+            #if !targetEnvironment(simulator)
             BackgroundTaskManager.shared.startBackgroundProcessing()
+            #endif
         }
     }
     
