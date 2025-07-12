@@ -24,26 +24,7 @@ class AppRestrictionManager: ObservableObject {
     
     // App bundle identifiers for common apps
     private let appBundleIds: [String: String] = [
-        "Instagram": "com.burbn.instagram",
-        "TikTok": "com.zhiliaoapp.musically",
-        "YouTube": "com.google.ios.youtube",
-        "Safari": "com.apple.mobilesafari",
-        "Messages": "com.apple.MobileSMS",
-        "Snapchat": "com.toyopagroup.picaboo",
-        "WhatsApp": "com.whatsapp.WhatsApp",
-        "Facebook": "com.facebook.Facebook",
-        "Twitter": "com.twitter.ios",
-        "Discord": "com.hammerandchisel.discord",
-        "Reddit": "com.reddit.Reddit",
-        "Netflix": "com.netflix.Netflix",
-        "Spotify": "com.spotify.client",
-        "Minecraft": "com.mojang.minecraftpe",
-        "Roblox": "com.roblox.client",
-        "Fortnite": "com.epicgames.fortnite",
-        "Call of Duty": "com.activision.callofduty.shooter",
-        "PUBG": "com.tencent.ig",
-        "Genshin Impact": "com.mihoyo.genshinimpact",
-        "Among Us": "com.innersloth.spacemafia"
+        "Instagram": "com.burbn.instagram"
     ]
     
     init() {
