@@ -48,7 +48,7 @@ struct PermissionRequestView: View {
                         .font(.title)
                         .fontWeight(.bold)
                     
-                    Text("To connect with your parent, we need your permission to monitor screen time")
+                    Text("To connect with your parent, we need your permission to monitor screen time and app usage")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
@@ -86,6 +86,16 @@ struct PermissionRequestView: View {
                             icon: "bell.fill",
                             text: "Receive gentle reminders from your parent"
                         )
+                        
+                        PermissionItem(
+                            icon: "shield.checkered",
+                            text: "App installation and removal tracking"
+                        )
+                        
+                        PermissionItem(
+                            icon: "chart.bar.fill",
+                            text: "Detailed usage analytics and reports"
+                        )
                     }
                     
                     Divider()
@@ -99,7 +109,7 @@ struct PermissionRequestView: View {
                                 .fontWeight(.medium)
                         }
                         
-                        Text("• We NEVER access your messages, photos, or personal content\n• We NEVER track your location or browsing history\n• We ONLY monitor app usage time (same data you see in iOS Settings)\n• Your parent can ONLY see which apps you use and for how long\n• You can revoke access anytime in iOS Settings > Screen Time > Family Controls")
+                        Text("• We NEVER access your messages, photos, or personal content\n• We NEVER track your location or browsing history\n• We ONLY monitor app usage time and screen time (same data you see in iOS Settings)\n• We track which apps you install or remove\n• Your parent can ONLY see which apps you use, for how long, when you install new apps or delete previos apps, and if you delete the WatchWise app")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -216,7 +226,13 @@ struct PermissionRequestView: View {
                 await MainActor.run {
                     isLoading = false
                     permissionGranted = true
-                    print("✅ Family Controls authorization granted")
+                    
+                    // Store authorization status permanently
+                    UserDefaults.standard.set(true, forKey: "hasRequestedScreenTimePermission")
+                    UserDefaults.standard.set(true, forKey: "screenTimeAuthorized")
+                    UserDefaults.standard.set(Date(), forKey: "screenTimeAuthorizationDate")
+                    
+                    print("✅ Family Controls authorization granted and stored")
                     
                     // Auto-continue after a brief delay
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {

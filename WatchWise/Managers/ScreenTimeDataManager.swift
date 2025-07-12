@@ -46,16 +46,31 @@ class ScreenTimeDataManager: ObservableObject {
     }
 
     func checkAuthorizationStatus() {
+        // First check if we have stored authorization status
+        let storedAuthorization = UserDefaults.standard.bool(forKey: "screenTimeAuthorized")
+        
         switch authorizationCenter.authorizationStatus {
         case .approved:
             isAuthorized = true
+            // Store the authorization status
+            UserDefaults.standard.set(true, forKey: "screenTimeAuthorized")
+            UserDefaults.standard.set(Date(), forKey: "screenTimeAuthorizationDate")
             print("✅ Family Controls authorization approved")
         case .denied:
             isAuthorized = false
+            // Clear stored authorization if denied
+            UserDefaults.standard.set(false, forKey: "screenTimeAuthorized")
+            UserDefaults.standard.removeObject(forKey: "screenTimeAuthorizationDate")
             print("❌ Family Controls authorization denied")
         case .notDetermined:
-            isAuthorized = false
-            print("⏳ Family Controls authorization not determined")
+            // If we have stored authorization, use it
+            if storedAuthorization {
+                isAuthorized = true
+                print("✅ Using stored Family Controls authorization")
+            } else {
+                isAuthorized = false
+                print("⏳ Family Controls authorization not determined")
+            }
         @unknown default:
             isAuthorized = false
             print("❓ Family Controls authorization unknown status")
@@ -69,7 +84,11 @@ class ScreenTimeDataManager: ObservableObject {
             await MainActor.run {
                 checkAuthorizationStatus()
                 if isAuthorized {
-                    print("✅ Family Controls authorization granted")
+                    // Store authorization status permanently
+                    UserDefaults.standard.set(true, forKey: "hasRequestedScreenTimePermission")
+                    UserDefaults.standard.set(true, forKey: "screenTimeAuthorized")
+                    UserDefaults.standard.set(Date(), forKey: "screenTimeAuthorizationDate")
+                    print("✅ Family Controls authorization granted and stored")
                 } else {
                     print("❌ Family Controls authorization failed")
                 }

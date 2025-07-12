@@ -39,6 +39,8 @@ class MessagingManager: ObservableObject {
     // MARK: - Connection Management
     
     func connect(parentId: String, childId: String) {
+        print("🔌 Attempting to connect to messaging for parent: \(parentId), child: \(childId)")
+        
         disconnect() // Clean up any existing connections
         
         isLoading = true
@@ -53,7 +55,7 @@ class MessagingManager: ObservableObject {
         isConnected = true
         isLoading = false
         
-        print("💬 MessagingManager: Connected to chat for parent \(parentId) and child \(childId)")
+        print("✅ MessagingManager: Successfully connected to chat for parent \(parentId) and child \(childId)")
     }
     
     func disconnect() {
@@ -87,8 +89,8 @@ class MessagingManager: ObservableObject {
             // Save to Firebase
             try await saveMessageToFirebase(message)
             
-            // Add to local messages
-            messages.append(message)
+            // Don't add to local messages - let the listener handle it
+            // This prevents duplicate messages
             
             // Send notification to child
             await sendMessageNotification(message)
@@ -119,8 +121,8 @@ class MessagingManager: ObservableObject {
             // Save to Firebase
             try await saveMessageToFirebase(message)
             
-            // Add to local messages
-            messages.append(message)
+            // Don't add to local messages - let the listener handle it
+            // This prevents duplicate messages
             
             // Send notification to parent
             await sendMessageNotification(message)
@@ -207,6 +209,7 @@ class MessagingManager: ObservableObject {
     
     private func setupMessageListener(parentId: String, childId: String) {
         let chatId = getChatId(parentId: parentId, childId: childId)
+        print("🔍 Setting up message listener for chatId: \(chatId)")
         
         messageListener = db.collection("messages")
             .whereField("chatId", isEqualTo: chatId)
@@ -216,24 +219,39 @@ class MessagingManager: ObservableObject {
                     guard let self = self else { return }
                     
                     if let error = error {
-                        self.errorMessage = "Failed to load messages: \(error.localizedDescription)"
                         print("❌ Error loading messages: \(error)")
+                        
+                        // Check if it's an index error
+                        if error.localizedDescription.contains("index") {
+                            self.errorMessage = "Database index is being created. Please wait a few minutes and try again."
+                            print("🔧 Index error detected - user should wait for index to build")
+                        } else {
+                            self.errorMessage = "Failed to load messages: \(error.localizedDescription)"
+                        }
                         return
                     }
                     
                     guard let documents = snapshot?.documents else {
-                        print("📝 No messages found")
+                        print("📝 No messages found for chatId: \(chatId)")
+                        self.messages = []
                         return
                     }
                     
                     let newMessages = documents.compactMap { document -> Message? in
-                        try? document.data(as: Message.self)
+                        do {
+                            let message = try document.data(as: Message.self)
+                            print("📝 Loaded message: \(message.text) from \(message.senderId)")
+                            return message
+                        } catch {
+                            print("❌ Error parsing message document: \(error)")
+                            return nil
+                        }
                     }
                     
                     // Only update if we have new messages
                     if newMessages.count != self.messages.count {
                         self.messages = newMessages
-                        print("📝 Loaded \(newMessages.count) messages")
+                        print("📝 Loaded \(newMessages.count) messages for chatId: \(chatId)")
                     }
                 }
             }
@@ -298,9 +316,13 @@ class MessagingManager: ObservableObject {
             "senderType": message.senderType.rawValue
         ]
         
+        print("💾 Saving message to Firebase: \(message.text) with chatId: \(chatId)")
+        
         try await db.collection("messages")
             .document(message.id)
             .setData(data)
+        
+        print("✅ Message saved successfully to Firebase")
     }
     
     private func sendMessageNotification(_ message: Message) async {
@@ -328,7 +350,9 @@ class MessagingManager: ObservableObject {
     private func getChatId(parentId: String, childId: String) -> String {
         // Create a consistent chat ID by sorting the IDs
         let sortedIds = [parentId, childId].sorted()
-        return "\(sortedIds[0])_\(sortedIds[1])"
+        let chatId = "\(sortedIds[0])_\(sortedIds[1])"
+        print("🔗 Generated chatId: \(chatId) from parentId: \(parentId), childId: \(childId)")
+        return chatId
     }
     
     // MARK: - Utility Methods
@@ -337,12 +361,12 @@ class MessagingManager: ObservableObject {
         return messages.filter { $0.receiverId == userId && !$0.isRead }.count
     }
     
-    func getLastMessage() -> Message? {
-        return messages.last
-    }
-    
     func clearError() {
         errorMessage = nil
+    }
+    
+    func getLastMessage() -> Message? {
+        return messages.last
     }
 }
 

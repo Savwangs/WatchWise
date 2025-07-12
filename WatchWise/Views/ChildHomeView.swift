@@ -16,8 +16,6 @@ struct ChildHomeView: View {
     @StateObject private var messagingManager = MessagingManager.shared
     @State private var showSignOutAlert = false
     @State private var showPermissionAlert = false
-    @State private var messages: [Message] = []
-    @State private var messageListener: ListenerRegistration?
     
     var body: some View {
         TabView {
@@ -50,13 +48,13 @@ struct ChildHomeView: View {
                     // Messages List
                     ScrollView {
                         VStack(spacing: 12) {
-                            if messages.isEmpty {
+                            if messagingManager.messages.isEmpty {
                                 Text("No messages yet")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                                     .padding(.vertical, 40)
                             } else {
-                                ForEach(messages, id: \.id) { message in
+                                ForEach(messagingManager.messages, id: \.id) { message in
                                     MessageRow(
                                         message: message.text,
                                         timestamp: message.formattedTimestamp,
@@ -107,13 +105,13 @@ struct ChildHomeView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Screen Time Authorization")
                                     .font(.body)
-                                Text(screenTimeDataManager.isAuthorized ? "Authorized" : "Not Authorized")
+                                Text(isScreenTimeAuthorized() ? "Authorized" : "Not Authorized")
                                     .font(.caption)
-                                    .foregroundColor(screenTimeDataManager.isAuthorized ? .green : .red)
+                                    .foregroundColor(isScreenTimeAuthorized() ? .green : .red)
                             }
                             Spacer()
                             
-                            if !screenTimeDataManager.isAuthorized {
+                            if !isScreenTimeAuthorized() {
                                 Button("Grant Access") {
                                     Task {
                                         await screenTimeDataManager.requestAuthorization()
@@ -152,7 +150,7 @@ struct ChildHomeView: View {
                             }
                         }
                         
-                        if screenTimeDataManager.isAuthorized && !screenTimeDataManager.isMonitoring {
+                        if isScreenTimeAuthorized() && !screenTimeDataManager.isMonitoring {
                             Button("Start Monitoring") {
                                 Task {
                                     if let deviceId = authManager.currentUser?.id {
@@ -352,8 +350,7 @@ struct ChildHomeView: View {
                 print("❌ No user data available in ChildHomeView")
             }
             
-            // Load messages
-            loadMessages()
+            // Setup messaging connection
             setupMessageListener()
             
             // Start heartbeat monitoring for child device with error handling
@@ -365,24 +362,32 @@ struct ChildHomeView: View {
                 }
             }
             
-            // Check if screen time authorization is needed (only for new users)
+            // Check authorization status and start monitoring if authorized
             let hasRequestedPermission = UserDefaults.standard.bool(forKey: "hasRequestedScreenTimePermission")
+            let isAuthorized = UserDefaults.standard.bool(forKey: "screenTimeAuthorized")
             
-            if !screenTimeDataManager.isAuthorized && !hasRequestedPermission {
-                print("🔍 Screen time authorization needed for new user")
-                showPermissionAlert = true
-            } else if screenTimeDataManager.isAuthorized, let deviceId = authManager.currentUser?.id {
-                // Start screen time monitoring if authorized
-                print("🔍 Starting screen time monitoring for device: \(deviceId)")
-                Task {
-                    do {
-                        await screenTimeDataManager.startScreenTimeMonitoring(for: deviceId)
-                    } catch {
-                        print("🔥 Error starting screen time monitoring: \(error)")
+            // Update the manager's authorization status
+            screenTimeDataManager.checkAuthorizationStatus()
+            
+            if screenTimeDataManager.isAuthorized || isAuthorized {
+                // User is authorized, start monitoring
+                if let deviceId = authManager.currentUser?.id {
+                    print("🔍 Starting screen time monitoring for device: \(deviceId)")
+                    Task {
+                        do {
+                            await screenTimeDataManager.startScreenTimeMonitoring(for: deviceId)
+                        } catch {
+                            print("🔥 Error starting screen time monitoring: \(error)")
+                        }
                     }
                 }
+            } else if !hasRequestedPermission {
+                // New user who hasn't requested permission yet
+                print("🔍 Screen time authorization needed for new user")
+                showPermissionAlert = true
             } else {
-                print("❌ No device ID available for screen time monitoring or permission not granted")
+                // User has requested permission but it was denied or not determined
+                print("⚠️ Screen time authorization was requested but not granted")
             }
         }
         .onChange(of: screenTimeDataManager.errorMessage) { errorMessage in
@@ -391,7 +396,7 @@ struct ChildHomeView: View {
             }
         }
         .onDisappear {
-            messageListener?.remove()
+            // Cleanup is handled by MessagingManager
         }
     }
     
@@ -400,33 +405,34 @@ struct ChildHomeView: View {
         screenTimeDataManager.stopMonitoring()
         activityManager.stopMonitoring()
         
-        // Clear user defaults
+        // Clear user defaults (but keep authorization status)
         UserDefaults.standard.removeObject(forKey: "isChildMode")
         UserDefaults.standard.removeObject(forKey: "userType")
         UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+        
+        // Note: We keep screen time authorization status persistent
+        // UserDefaults.standard.removeObject(forKey: "screenTimeAuthorized")
+        // UserDefaults.standard.removeObject(forKey: "hasRequestedScreenTimePermission")
         
         // Sign out from Firebase
         authManager.signOut()
     }
     
     // MARK: - Message Management
-    private func loadMessages() {
-        guard let deviceId = authManager.currentUser?.id else { return }
-        
-        // Messages will be loaded through the real-time listener
-        // The MessagingManager.shared will handle the connection
-    }
-    
     private func setupMessageListener() {
         guard let deviceId = authManager.currentUser?.id else { return }
         
-        // Connect to messaging manager for real-time updates
-        messagingManager.connect(parentId: deviceId, childId: deviceId)
-        
-        // Listen for message updates
+        // Load parent ID for child device
         Task {
-            await MainActor.run {
-                self.messages = messagingManager.messages
+            let parentId = await PairingManager.shared.loadParentForChild(childUserId: deviceId)
+            if let parentId = parentId {
+                print("✅ ChildHomeView: Connecting to messaging with parentId: \(parentId), childId: \(deviceId)")
+                messagingManager.connect(parentId: parentId, childId: deviceId)
+                
+                // The messages will be automatically updated through the @StateObject observation
+                // No need to manually sync since MessagingManager is @Published
+            } else {
+                print("❌ ChildHomeView: Could not load parent ID for messaging")
             }
         }
     }
@@ -457,6 +463,12 @@ struct ChildHomeView: View {
     
     private func getDeviceName() -> String {
         return authManager.currentUser?.deviceName ?? "This Device"
+    }
+    
+    private func isScreenTimeAuthorized() -> Bool {
+        // Check both the manager's status and stored status
+        let storedAuthorization = UserDefaults.standard.bool(forKey: "screenTimeAuthorized")
+        return screenTimeDataManager.isAuthorized || storedAuthorization
     }
 }
 

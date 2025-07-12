@@ -43,12 +43,17 @@ struct ChildMessagesView: View {
             .navigationBarHidden(true)
         }
         .onAppear {
+            print("📱 ChildMessagesView appeared")
             setupMessaging()
         }
         .onDisappear {
             messagingManager.disconnect()
         }
         .alert("Error", isPresented: .constant(messagingManager.errorMessage != nil)) {
+            Button("Retry") {
+                messagingManager.clearError()
+                setupMessaging()
+            }
             Button("OK") {
                 messagingManager.clearError()
             }
@@ -213,12 +218,42 @@ struct ChildMessagesView: View {
     // MARK: - Methods
     
     private func setupMessaging() {
-        guard let currentUser = authManager.currentUser,
-              let parentId = selectedParentId ?? pairingManager.pairedChildren.first?.parentId else {
+        print("🔍 Child setupMessaging called")
+        
+        guard let currentUser = authManager.currentUser else {
+            print("❌ Child setupMessaging: No current user")
             return
         }
         
-        messagingManager.connect(parentId: parentId, childId: currentUser.id)
+        print("✅ Child setupMessaging: Current user found - \(currentUser.id)")
+        
+        // Try to get parent ID from multiple sources
+        var parentId = selectedParentId ?? pairingManager.pairedChildren.first?.parentId
+        
+        print("🔍 Child setupMessaging: Checking pairing data...")
+        print("   - selectedParentId: \(selectedParentId ?? "nil")")
+        print("   - pairedChildren count: \(pairingManager.pairedChildren.count)")
+        
+        for (index, child) in pairingManager.pairedChildren.enumerated() {
+            print("   - pairedChildren[\(index)]: parentId=\(child.parentId), childUserId=\(child.childUserId)")
+        }
+        
+        // If no parent ID found, try to load it from Firebase
+        if parentId == nil {
+            print("🔍 Child setupMessaging: No parent ID in local data, loading from Firebase...")
+            Task {
+                let loadedParentId = await pairingManager.loadParentForChild(childUserId: currentUser.id)
+                if let loadedParentId = loadedParentId {
+                    print("✅ Child setupMessaging: Loaded parent ID from Firebase: \(loadedParentId)")
+                    messagingManager.connect(parentId: loadedParentId, childId: currentUser.id)
+                } else {
+                    print("❌ Child setupMessaging: Could not load parent ID from Firebase")
+                }
+            }
+        } else {
+            print("✅ Child setupMessaging: Connecting with parentId: \(parentId!), childId: \(currentUser.id)")
+            messagingManager.connect(parentId: parentId!, childId: currentUser.id)
+        }
     }
     
     private func sendMessage() {

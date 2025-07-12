@@ -701,6 +701,30 @@ class PairingManager: ObservableObject {
         }
     }
     
+    /// Loads parent ID for a child user (called from child device)
+    func loadParentForChild(childUserId: String) async -> String? {
+        do {
+            print("🔍 Loading parent for child: \(childUserId)")
+            
+            let snapshot = try await firebaseManager.parentChildRelationshipsCollection
+                .whereField("childUserId", isEqualTo: childUserId)
+                .whereField("isActive", isEqualTo: true)
+                .getDocuments()
+            
+            if let document = snapshot.documents.first {
+                let parentUserId = document.data()["parentUserId"] as? String
+                print("✅ Found parent for child: \(parentUserId ?? "nil")")
+                return parentUserId
+            } else {
+                print("❌ No parent found for child: \(childUserId)")
+                return nil
+            }
+        } catch {
+            print("❌ Error loading parent for child: \(error)")
+            return nil
+        }
+    }
+    
     /// Updates the last sync time for a child device (called from child device)
     func updateLastSyncTime(childUserId: String) async {
         do {
