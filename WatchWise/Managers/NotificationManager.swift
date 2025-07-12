@@ -173,9 +173,24 @@ class NotificationManager: ObservableObject {
                     guard let self = self else { return }
                     
                     if let error = error {
-                        self.errorMessage = "Failed to load notifications: \(error.localizedDescription)"
-                        print("❌ Error loading notifications: \(error)")
-                        return
+                        // Check if it's a permissions error
+                        if error.localizedDescription.contains("Missing or insufficient permissions") {
+                            // Don't show error for simulator - this is expected
+                            #if targetEnvironment(simulator)
+                            print("🔔 Simulator: Notifications collection not accessible (expected)")
+                            self.notifications = []
+                            self.unreadCount = 0
+                            return
+                            #else
+                            self.errorMessage = "Failed to load notifications: Missing or insufficient permissions"
+                            print("❌ Error loading notifications: \(error)")
+                            return
+                            #endif
+                        } else {
+                            self.errorMessage = "Failed to load notifications: \(error.localizedDescription)"
+                            print("❌ Error loading notifications: \(error)")
+                            return
+                        }
                     }
                     
                     guard let documents = snapshot?.documents else {

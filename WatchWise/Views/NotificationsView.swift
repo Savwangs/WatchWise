@@ -50,7 +50,7 @@ struct NotificationsView: View {
         .actionSheet(isPresented: $showingActionSheet) {
             actionSheet
         }
-        .alert("Error", isPresented: .constant(notificationManager.errorMessage != nil)) {
+        .alert("Error", isPresented: .constant(notificationManager.errorMessage != nil && !isSimulator())) {
             Button("OK") {
                 notificationManager.clearError()
             }
@@ -286,6 +286,14 @@ struct NotificationsView: View {
         notificationManager.setup()
         notificationManager.connect(userId: currentUser.id)
         appDeletionManager.loadDeletedApps()
+    }
+    
+    private func isSimulator() -> Bool {
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        return false
+        #endif
     }
 }
 
