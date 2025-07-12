@@ -181,15 +181,6 @@ struct PermissionRequestView: View {
                         .cornerRadius(12)
                         .disabled(isLoading)
                         
-                        // Skip Button (Demo Mode)
-                        Button(action: {
-                            // In demo mode, simulate permission granted
-                            simulatePermissionGranted()
-                        }) {
-                            Text("Skip (Demo Mode)")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
                     }
                 }
                 .padding(.horizontal, 32)

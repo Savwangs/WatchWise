@@ -24,7 +24,7 @@ class AppRestrictionManager: ObservableObject {
     
     // App bundle identifiers for common apps
     private let appBundleIds: [String: String] = [
-        "Instagram": "com.burbn.instagram"
+        "Safari": "com.apple.mobilesafari"
     ]
     
     init() {
