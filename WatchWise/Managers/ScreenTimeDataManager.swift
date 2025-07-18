@@ -530,25 +530,12 @@ class ScreenTimeDataManager: ObservableObject {
                 let parentUserId = relationshipData["parentUserId"] as? String ?? ""
                 let childName = relationshipData["childName"] as? String ?? "Child"
                 
-                // Create notification for parent
-                try await db.collection("notifications").addDocument(data: [
-                    "parentUserId": parentUserId,
-                    "childUserId": currentUser.uid,
-                    "childName": childName,
-                    "type": "new_app_detected",
-                    "title": "New App Detected",
-                    "message": "\(childName) has started using a new app: \(detection.appName)",
-                    "appName": detection.appName,
-                    "bundleIdentifier": detection.bundleIdentifier,
-                    "timestamp": Timestamp(),
-                    "isRead": false
-                ])
-                
-                print("📧 Sent new app notification to parent: \(detection.appName)")
+                // New app detected (no notification)
+                print("📧 New app detected: \(detection.appName)")
             }
             
         } catch {
-            print("🔥 Error sending new app notification: \(error)")
+                            print("🔥 Error processing new app detection: \(error)")
         }
     }
     

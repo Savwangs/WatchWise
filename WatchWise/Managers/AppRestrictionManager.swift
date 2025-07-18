@@ -243,7 +243,7 @@ class AppRestrictionManager: ObservableObject {
         // Check if limit exceeded
         if restriction.timeLimit > 0 && restriction.dailyUsage >= restriction.timeLimit {
             await disableApp(bundleId: bundleId)
-            await sendLimitExceededNotification(bundleId: bundleId)
+            print("⚠️ App limit exceeded: \(bundleId)")
         }
         
         // Update Firebase
@@ -345,29 +345,7 @@ class AppRestrictionManager: ObservableObject {
         print("🌙 Removed bedtime restrictions")
     }
     
-    private func sendLimitExceededNotification(bundleId: String) async {
-        // Send notification to parent about limit exceeded
-        guard let currentUser = Auth.auth().currentUser else { return }
-        
-        let appName = getAppName(for: bundleId)
-        
-        do {
-            try await db.collection("notifications").addDocument(data: [
-                "parentId": currentUser.uid,
-                "type": "app_limit_exceeded",
-                "title": "App Time Limit Exceeded",
-                "message": "\(appName) has reached its daily time limit",
-                "bundleId": bundleId,
-                "timestamp": Timestamp(),
-                "isRead": false
-            ])
-            
-            print("🔔 Sent limit exceeded notification for \(appName)")
-            
-        } catch {
-            print("❌ Error sending notification: \(error)")
-        }
-    }
+
     
     private func startRestrictionMonitoring() {
         // Check restrictions every minute

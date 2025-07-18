@@ -10,7 +10,6 @@ import FirebaseFirestore
 
 struct DeviceManagementView: View {
     @StateObject private var pairingManager = PairingManager.shared
-    @StateObject private var notificationManager = NotificationManager.shared
     @State private var showingUnlinkAlert = false
     @State private var deviceToUnlink: PairedChildDevice?
     @State private var isLoading = false
@@ -144,17 +143,11 @@ struct DeviceManagementView: View {
         
         switch result {
         case .success:
-            // Send a system alert notification
-            await notificationManager.sendSystemAlertNotification(
-                title: "Device Unlinked",
-                message: "\(device.childName)'s device has been successfully unlinked."
-            )
+            // Device unlinked successfully
+            print("✅ Device unlinked successfully: \(device.childName)")
             
         case .failure(let error):
-            await notificationManager.sendSystemAlertNotification(
-                title: "Unlink Failed",
-                message: "Failed to unlink \(device.childName)'s device: \(error.localizedDescription)"
-            )
+            print("❌ Failed to unlink device: \(error.localizedDescription)")
         }
     }
 }

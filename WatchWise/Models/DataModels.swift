@@ -109,13 +109,7 @@ struct QuickMessage: Identifiable {
     ]
 }
 
-struct NotificationMessage: Codable {
-    let parentId: String
-    let childDeviceId: String
-    let message: String
-    let timestamp: Timestamp
-    let isRead: Bool
-}
+
 
 // MARK: - Chat Messaging Models
 
@@ -175,10 +169,10 @@ struct DatabaseUser: Identifiable, Codable {
     let createdAt: Timestamp
     var lastActiveAt: Timestamp
     var familyId: String?
-    var deviceToken: String? // For push notifications
+
     
     enum CodingKeys: String, CodingKey {
-        case id, email, displayName, isDevicePaired, hasCompletedOnboarding, userType, createdAt, lastActiveAt, familyId, deviceToken
+        case id, email, displayName, isDevicePaired, hasCompletedOnboarding, userType, createdAt, lastActiveAt, familyId
     }
 }
 
@@ -198,17 +192,7 @@ struct MessageThread: Identifiable, Codable {
     }
 }
 
-// Push notification payload
-struct PushNotificationPayload: Codable {
-    let title: String
-    let body: String
-    let data: [String: String]?
-    let badge: Int?
-    
-    enum CodingKeys: String, CodingKey {
-        case title, body, data, badge
-    }
-}
+
 
 // Screen time summary for dashboard
 struct ScreenTimeSummary: Identifiable {

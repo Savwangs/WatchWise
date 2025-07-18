@@ -106,9 +106,9 @@ class HeartbeatManager: ObservableObject {
                 let heartbeatStatus = await getHeartbeatStatus(childUserId: childUserId)
                 updatedDevices.append(heartbeatStatus)
                 
-                // Check if device is offline and send notification
+                // Check if device is offline (no notification sent)
                 if heartbeatStatus.status == .offline {
-                    await sendOfflineNotification(parentId: parentId, childName: childName, childUserId: childUserId)
+                    print("⚠️ Device offline: \(childName)")
                 }
             }
             
@@ -182,43 +182,7 @@ class HeartbeatManager: ObservableObject {
         )
     }
     
-    private func sendOfflineNotification(parentId: String, childName: String, childUserId: String) async {
-        do {
-            // Check if we already sent a notification recently (within 6 hours)
-            let recentNotification = try await db.collection("notifications")
-                .whereField("recipientId", isEqualTo: parentId)
-                .whereField("type", isEqualTo: "device_offline")
-                .whereField("data.childUserId", isEqualTo: childUserId)
-                .whereField("timestamp", isGreaterThan: Timestamp(date: Date().addingTimeInterval(-6 * 60 * 60)))
-                .limit(to: 1)
-                .getDocuments()
-            
-            if !recentNotification.documents.isEmpty {
-                return // Already notified recently
-            }
-            
-            let notificationData: [String: Any] = [
-                "recipientId": parentId,
-                "type": "device_offline",
-                "title": "Device Unreachable",
-                "message": "\(childName)'s device hasn't been reachable for over 24 hours. The device may be offline, powered off, or WatchWise may have been removed.",
-                "data": [
-                    "childUserId": childUserId,
-                    "childName": childName,
-                    "offlineSince": Timestamp()
-                ],
-                "timestamp": Timestamp(),
-                "isRead": false
-            ]
-            
-            try await db.collection("notifications").addDocument(data: notificationData)
-            
-            print("🔔 Sent offline notification for child: \(childName)")
-            
-        } catch {
-            print("❌ Error sending offline notification: \(error)")
-        }
-    }
+
     
     // MARK: - Background Task Support
     

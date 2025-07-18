@@ -125,15 +125,8 @@ class SecurityManager: ObservableObject {
                 try await doc.reference.delete()
             }
             
-            // Clean up old notifications
-            let notificationQuery = db.collection("notifications")
-                .whereField("recipientId", isEqualTo: currentUser.uid)
-                .whereField("timestamp", isLessThan: Timestamp(date: cutoffDate))
-            
-            let notificationDocs = try await notificationQuery.getDocuments()
-            for doc in notificationDocs.documents {
-                try await doc.reference.delete()
-            }
+            // Clean up old notifications (removed - no notifications in this branch)
+            print("🗑️ Skipping notification cleanup - notifications disabled")
             
             // Clean up old messages (keep last 30 days)
             let messageCutoff = Date().addingTimeInterval(-30 * 24 * 60 * 60)
@@ -159,7 +152,7 @@ class SecurityManager: ObservableObject {
     func deleteUserData(userId: String) async -> Bool {
         do {
             // Delete all user data from Firebase
-            let collections = ["users", "screenTimeData", "notifications", "messages", 
+            let collections = ["users", "screenTimeData", "messages", 
                              "appRestrictions", "newAppDetections", "deletedApps", "heartbeats"]
             
             for collectionName in collections {

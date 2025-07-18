@@ -13,21 +13,14 @@ import FirebaseFirestore
 struct SettingsView: View {
     @EnvironmentObject var authManager: AuthenticationManager
     @StateObject private var databaseManager = DatabaseManager.shared
-    @StateObject private var pairingManager = PairingManager.shared
-    @StateObject private var appRestrictionManager = AppRestrictionManager()
-    @StateObject private var newAppDetectionManager = NewAppDetectionManager()
+    @State private var pairedDevices: [ChildDevice] = []
     @State private var alertSettings = AlertSettings.defaultSettings
+    @State private var isLoading = false
     @State private var showSignOutAlert = false
     @State private var showUnlinkAlert = false
-    @State private var deviceToUnlink: PairedChildDevice?
+    @State private var deviceToUnlink: ChildDevice?
     @State private var showError = false
     @State private var errorMessage = ""
-    
-    // NEW: App deletion functionality
-    @State private var deletedApps: [String] = [] // Bundle identifiers of deleted apps
-    @State private var showUndoAlert = false
-    @State private var appToUndo: String? // Bundle identifier of app to undo deletion
-    @State private var undoTimeout: Timer?
     
     var body: some View {
         NavigationStack {
@@ -65,19 +58,37 @@ struct SettingsView: View {
                         }
                         .padding(.bottom, 24)
                         
-                        // Current Paired Device Section
+                        // Paired Devices Section
                         VStack(alignment: .leading, spacing: 16) {
                             HStack {
-                                Text("Current Paired Device")
+                                Text("Paired Devices")
                                     .font(.headline)
                                     .foregroundColor(.secondary)
                                 
                                 Spacer()
+                                
+                                // Add Device Button (always visible)
+                                NavigationLink(destination: DevicePairingView()
+                                    .onDisappear {
+                                        Task {
+                                            await loadPairedDevices()
+                                        }
+                                    }
+                                ) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "plus.circle.fill")
+                                            .foregroundColor(.blue)
+                                        Text("Add Device")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                    }
+                                    .foregroundColor(.blue)
+                                }
                             }
                             .padding(.horizontal)
                             
                             VStack(spacing: 12) {
-                                if pairingManager.isLoading {
+                                if isLoading {
                                     HStack {
                                         ProgressView()
                                             .scaleEffect(0.8)
@@ -88,11 +99,11 @@ struct SettingsView: View {
                                     .padding()
                                     .background(Color(.systemGray6))
                                     .cornerRadius(12)
-                                } else if pairingManager.pairedChildren.isEmpty {
+                                } else if pairedDevices.isEmpty {
                                     HStack {
                                         Image(systemName: "iphone.slash")
                                             .foregroundColor(.gray)
-                                        Text("No device currently paired")
+                                        Text("No devices paired")
                                             .foregroundColor(.secondary)
                                         Spacer()
                                     }
@@ -100,17 +111,14 @@ struct SettingsView: View {
                                     .background(Color(.systemGray6))
                                     .cornerRadius(12)
                                 } else {
-                                    // Show the currently selected device from Dashboard
-                                    let selectedDeviceId = UserDefaults.standard.string(forKey: "selectedDeviceId")
-                                    let currentDevice = selectedDeviceId != nil ? 
-                                        pairingManager.pairedChildren.first { $0.childUserId == selectedDeviceId } :
-                                        pairingManager.pairedChildren.first
-                                    
-                                    if let device = currentDevice {
-                                        CurrentDeviceRow(device: device)
-                                            .padding()
-                                            .background(Color(.systemGray6))
-                                            .cornerRadius(12)
+                                    ForEach(pairedDevices) { device in
+                                        DeviceRow(device: device) {
+                                            deviceToUnlink = device
+                                            showUnlinkAlert = true
+                                        }
+                                        .padding()
+                                        .background(Color(.systemGray6))
+                                        .cornerRadius(12)
                                     }
                                 }
                             }
@@ -141,60 +149,22 @@ struct SettingsView: View {
                                 
                                 if alertSettings.isEnabled {
                                     // Individual App Limits
-                                    ForEach(getAppsForLimits(), id: \.bundleId) { app in
+                                    ForEach(getTopAppsForLimits(), id: \.bundleIdentifier) { app in
                                         AppLimitSlider(
                                             appName: app.appName,
-                                            bundleIdentifier: app.bundleId,
-                                            currentUsage: app.currentUsage,
-                                            timeLimit: bindingForApp(app.bundleId),
-                                            isDisabled: app.isDisabled,
+                                            bundleIdentifier: app.bundleIdentifier,
+                                            currentUsage: app.duration,
+                                            timeLimit: bindingForApp(app.bundleIdentifier),
+                                            isDisabled: alertSettings.disabledApps.contains(app.bundleIdentifier),
                                             onDisableToggle: { isDisabled in
-                                                Task {
-                                                    if isDisabled {
-                                                        await appRestrictionManager.disableApp(bundleId: app.bundleId)
-                                                    } else {
-                                                        await appRestrictionManager.enableApp(bundleId: app.bundleId)
-                                                    }
+                                                if isDisabled {
+                                                    alertSettings.disabledApps.append(app.bundleIdentifier)
+                                                } else {
+                                                    alertSettings.disabledApps.removeAll { $0 == app.bundleIdentifier }
                                                 }
-                                            },
-                                            onDelete: {
-                                                deleteApp(app.bundleId)
+                                                saveAlertSettings()
                                             }
                                         )
-                                    }
-                                    
-                                    // Show undo alert if there are deleted apps
-                                    if !deletedApps.isEmpty {
-                                        VStack(spacing: 8) {
-                                            HStack {
-                                                Image(systemName: "info.circle.fill")
-                                                    .foregroundColor(.orange)
-                                                Text("Recently Deleted Apps (2 days to restore)")
-                                                    .font(.subheadline)
-                                                    .fontWeight(.medium)
-                                                Spacer()
-                                            }
-                                            
-                                            ForEach(deletedApps, id: \.self) { bundleId in
-                                                if let appName = getAppName(for: bundleId) {
-                                                    HStack {
-                                                        Text(appName)
-                                                            .font(.caption)
-                                                            .foregroundColor(.secondary)
-                                                        Spacer()
-                                                        Button("Undo") {
-                                                            undoAppDeletion(bundleId)
-                                                        }
-                                                        .font(.caption)
-                                                        .foregroundColor(.blue)
-                                                    }
-                                                    .padding(.vertical, 4)
-                                                }
-                                            }
-                                        }
-                                        .padding()
-                                        .background(Color.orange.opacity(0.1))
-                                        .cornerRadius(8)
                                     }
                                 }
                             }
@@ -215,12 +185,10 @@ struct SettingsView: View {
                                     Text("Enable Bedtime Mode")
                                         .font(.body)
                                     Spacer()
-                                                                    Toggle("", isOn: $alertSettings.bedtimeSettings.isEnabled)
-                                    .onChange(of: alertSettings.bedtimeSettings.isEnabled) { _ in
-                                        Task {
-                                            await appRestrictionManager.setBedtimeRestrictions(settings: alertSettings.bedtimeSettings)
+                                    Toggle("", isOn: $alertSettings.bedtimeSettings.isEnabled)
+                                        .onChange(of: alertSettings.bedtimeSettings.isEnabled) { _ in
+                                            saveAlertSettings()
                                         }
-                                    }
                                 }
                                 .padding()
                                 .background(Color(.systemGray6))
@@ -277,9 +245,7 @@ struct SettingsView: View {
                                                         let formatter = DateFormatter()
                                                         formatter.dateFormat = "HH:mm"
                                                         alertSettings.bedtimeSettings.startTime = formatter.string(from: newDate)
-                                                        Task {
-                                                            await appRestrictionManager.setBedtimeRestrictions(settings: alertSettings.bedtimeSettings)
-                                                        }
+                                                        saveAlertSettings()
                                                     }
                                                 ), displayedComponents: .hourAndMinute)
                                                 .labelsHidden()
@@ -304,9 +270,7 @@ struct SettingsView: View {
                                                         let formatter = DateFormatter()
                                                         formatter.dateFormat = "HH:mm"
                                                         alertSettings.bedtimeSettings.endTime = formatter.string(from: newDate)
-                                                        Task {
-                                                            await appRestrictionManager.setBedtimeRestrictions(settings: alertSettings.bedtimeSettings)
-                                                        }
+                                                        saveAlertSettings()
                                                     }
                                                 ), displayedComponents: .hourAndMinute)
                                                 .labelsHidden()
@@ -339,9 +303,7 @@ struct SettingsView: View {
                                                         } else {
                                                             alertSettings.bedtimeSettings.enabledDays.removeAll { $0 == day }
                                                         }
-                                                        Task {
-                                                            await appRestrictionManager.setBedtimeRestrictions(settings: alertSettings.bedtimeSettings)
-                                                        }
+                                                        saveAlertSettings()
                                                     }
                                                 )
                                             }
@@ -367,75 +329,6 @@ struct SettingsView: View {
                                     }
                                     .padding()
                                     .background(Color.purple.opacity(0.1))
-                                    .cornerRadius(12)
-                                }
-                            }
-                            .padding(.horizontal)
-                        }
-                        .padding(.bottom, 24)
-                        
-                        // New App Detection Section
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("New App Detection")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal)
-                            
-                            VStack(spacing: 16) {
-                                if newAppDetectionManager.isLoading {
-                                    HStack {
-                                        ProgressView()
-                                            .scaleEffect(0.8)
-                                        Text("Checking for new apps...")
-                                            .foregroundColor(.secondary)
-                                        Spacer()
-                                    }
-                                    .padding()
-                                    .background(Color(.systemGray6))
-                                    .cornerRadius(12)
-                                } else if newAppDetectionManager.newAppDetections.isEmpty {
-                                    HStack {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundColor(.green)
-                                        Text("No new apps detected")
-                                            .foregroundColor(.secondary)
-                                        Spacer()
-                                    }
-                                    .padding()
-                                    .background(Color(.systemGray6))
-                                    .cornerRadius(12)
-                                } else {
-                                    ForEach(newAppDetectionManager.newAppDetections) { detection in
-                                        NewAppDetectionRow(
-                                            detection: detection,
-                                            onAddToMonitoring: {
-                                                Task {
-                                                    await newAppDetectionManager.addAppToMonitoring(detection)
-                                                }
-                                            },
-                                            onIgnore: {
-                                                Task {
-                                                    await newAppDetectionManager.ignoreNewApp(detection)
-                                                }
-                                            }
-                                        )
-                                    }
-                                }
-                                
-                                // Manual Check Button
-                                Button(action: {
-                                    Task {
-                                        await newAppDetectionManager.checkForNewApps()
-                                    }
-                                }) {
-                                    HStack {
-                                        Image(systemName: "magnifyingglass")
-                                        Text("Check for New Apps")
-                                    }
-                                    .foregroundColor(.blue)
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                                    .background(Color.blue.opacity(0.1))
                                     .cornerRadius(12)
                                 }
                             }
@@ -516,22 +409,10 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
             .refreshable {
-                await pairingManager.loadPairedChildren()
+                await loadPairedDevices()
             }
-            .onAppear {
-                Task {
-                    await pairingManager.loadPairedChildren()
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-                Task {
-                    await pairingManager.loadPairedChildren()
-                }
-            }
-            .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
-                Task {
-                    await pairingManager.loadPairedChildren()
-                }
+            .task {
+                await loadInitialData()
             }
         }
         .alert("Sign Out", isPresented: $showSignOutAlert) {
@@ -559,20 +440,68 @@ struct SettingsView: View {
         } message: {
             Text(errorMessage)
         }
-        .onDisappear {
-            // Clean up timer when view disappears
-            undoTimeout?.invalidate()
-            undoTimeout = nil
-        }
     }
     
     // MARK: - Data Loading Methods
     
-    // This function is no longer needed since we're using PairingManager
-    // The paired devices are now loaded through pairingManager.loadPairedChildren()
+    @MainActor
+    private func loadInitialData() async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                await loadPairedDevices()
+            }
+            group.addTask {
+                await loadAlertSettingsWithDefaults()
+            }
+        }
+    }
     
-    // This function is no longer needed since we're using PairingManager
-    // The paired devices are now loaded through pairingManager.loadPairedChildren()
+    @MainActor
+    private func loadPairedDevices() async {
+        guard let parentId = authManager.currentUser?.id else {
+            showErrorMessage("User not authenticated")
+            return
+        }
+        
+        isLoading = true
+        
+        // DEMO DATA - START (Remove in production)
+        // Simulate loading delay
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        
+        let demoDevice = ChildDevice(
+            id: "demo_device_1",
+            childName: "Savir",
+            deviceName: "Savir's iPhone",
+            pairCode: "123456",
+            parentId: parentId,
+            pairedAt: Timestamp(date: Date().addingTimeInterval(-86400)),
+            isActive: true
+        )
+        
+        pairedDevices = [demoDevice]
+        isLoading = false
+        print("✅ Loaded demo paired device: \(demoDevice.childName)")
+        // DEMO DATA - END (Remove in production)
+        
+        /* PRODUCTION CODE - Uncomment when ready for production
+        await withCheckedContinuation { continuation in
+            databaseManager.getChildDevices(for: parentId) { result in
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    switch result {
+                    case .success(let devices):
+                        self.pairedDevices = devices
+                        print("✅ Loaded \(devices.count) paired devices")
+                    case .failure(let error):
+                        self.showErrorMessage("Failed to load paired devices: \(error.localizedDescription)")
+                    }
+                    continuation.resume()
+                }
+            }
+        }
+        */
+    }
     
     @MainActor
     private func loadAlertSettings() async {
@@ -598,20 +527,32 @@ struct SettingsView: View {
     
     // MARK: - Device Management
     
-    private func unlinkDevice(_ device: PairedChildDevice) {
-        Task {
-            let result = await pairingManager.unpairChild(relationshipId: device.id)
-            
-            await MainActor.run {
-                switch result {
-                case .success:
-                    self.deviceToUnlink = nil
-                    print("✅ Device unlinked successfully")
-                case .failure(let error):
-                    self.showErrorMessage("Failed to unlink device: \(error.localizedDescription)")
+    private func unlinkDevice(_ device: ChildDevice) {
+        guard let deviceId = device.id else {
+            showErrorMessage("Invalid device")
+            return
+        }
+        
+        // Update the device status to inactive
+        let updateData: [String: Any] = [
+            "isActive": false,
+            "unlinkedAt": Timestamp()
+        ]
+        
+        FirebaseManager.shared.devicesCollection
+            .document(deviceId)
+            .updateData(updateData) { error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        self.showErrorMessage("Failed to unlink device: \(error.localizedDescription)")
+                    } else {
+                        // Remove from local array
+                        self.pairedDevices.removeAll { $0.id == deviceId }
+                        self.deviceToUnlink = nil
+                        print("✅ Device unlinked successfully")
+                    }
                 }
             }
-        }
     }
     
     // MARK: - Settings Management
@@ -619,6 +560,13 @@ struct SettingsView: View {
     private func saveAlertSettings() {
         guard let userId = authManager.currentUser?.id else { return }
         
+        // DEMO DATA - START (Remove in production)
+        // In demo mode, just simulate successful save without Firebase call
+        print("✅ Alert settings saved successfully (DEMO MODE)")
+        return
+        // DEMO DATA - END (Remove in production)
+        
+        /* PRODUCTION CODE - Uncomment when ready for production
         do {
             let encoder = JSONEncoder()
             let data = try encoder.encode(alertSettings)
@@ -640,6 +588,7 @@ struct SettingsView: View {
         } catch {
             showErrorMessage("Failed to encode alert settings")
         }
+        */
     }
     
     // MARK: - Error Handling
@@ -651,26 +600,73 @@ struct SettingsView: View {
     }
     
     // MARK: - App Limits Helper Methods
-    private func getAppsForLimits() -> [AppLimitData] {
-        // Get apps from AppRestrictionManager
-        let appNames = appRestrictionManager.getAllAppNames()
-        return appNames.map { appName in
-            let bundleId = appRestrictionManager.getBundleId(for: appName) ?? ""
-            let currentUsage = appRestrictionManager.getAppUsage(bundleId: bundleId)
-            let isDisabled = appRestrictionManager.isAppRestricted(bundleId: bundleId)
-            
-            return AppLimitData(
-                appName: appName,
-                bundleId: bundleId,
-                currentUsage: currentUsage,
-                isDisabled: isDisabled
+    private func getTopAppsForLimits() -> [AppUsage] {
+        // DEMO DATA - START (Remove in production)
+        let demoApps = [
+            AppUsage(
+                appName: "Instagram",
+                bundleIdentifier: "com.burbn.instagram",
+                duration: 4500, // 1h 15m
+                timestamp: Date().addingTimeInterval(-3600),
+                usageRanges: nil
+            ),
+            AppUsage(
+                appName: "TikTok",
+                bundleIdentifier: "com.zhiliaoapp.musically",
+                duration: 2700, // 45m
+                timestamp: Date().addingTimeInterval(-7200),
+                usageRanges: nil
+            ),
+            AppUsage(
+                appName: "YouTube",
+                bundleIdentifier: "com.google.ios.youtube",
+                duration: 3600, // 1h
+                timestamp: Date().addingTimeInterval(-5400),
+                usageRanges: nil
+            ),
+            AppUsage(
+                appName: "Safari",
+                bundleIdentifier: "com.apple.mobilesafari",
+                duration: 1200, // 20m
+                timestamp: Date().addingTimeInterval(-1800),
+                usageRanges: nil
+            ),
+            AppUsage(
+                appName: "Snapchat",
+                bundleIdentifier: "com.toyopagroup.picaboo",
+                duration: 1800, // 30m
+                timestamp: Date().addingTimeInterval(-900),
+                usageRanges: nil
+            ),
+            AppUsage(
+                appName: "Messages",
+                bundleIdentifier: "com.apple.MobileSMS",
+                duration: 900, // 15m
+                timestamp: Date().addingTimeInterval(-600),
+                usageRanges: nil
             )
-        }
+        ]
+        return Array(demoApps.prefix(6)) // Top 6 apps
+        // DEMO DATA - END (Remove in production)
+        
+        /* PRODUCTION CODE - Uncomment when ready for production
+        // Get the top apps from current screen time data
+        // This would come from your actual screen time data source
+        return []
+        */
     }
 
     private func loadAlertSettingsWithDefaults() async {
         guard let userId = authManager.currentUser?.id else { return }
         
+        // DEMO DATA - START (Remove in production)
+        // In demo mode, just use default settings directly
+        self.alertSettings = AlertSettings.defaultSettings
+        print("✅ Loaded demo alert settings with bedtime: \(alertSettings.bedtimeSettings.startTime) - \(alertSettings.bedtimeSettings.endTime)")
+        return
+        // DEMO DATA - END (Remove in production)
+        
+        /* PRODUCTION CODE - Uncomment when ready for production
         await withCheckedContinuation { continuation in
             FirebaseManager.shared.usersCollection
                 .document(userId)
@@ -689,18 +685,15 @@ struct SettingsView: View {
                     }
                 }
         }
+        */
     }
     
     private func bindingForApp(_ bundleId: String) -> Binding<Double> {
         return Binding(
-            get: { 
-                let limit = appRestrictionManager.getAppLimit(bundleId: bundleId)
-                return limit / 3600.0 // Convert seconds to hours
-            },
+            get: { alertSettings.appLimits[bundleId] ?? 2.0 },
             set: { newValue in
-                Task {
-                    await appRestrictionManager.setAppLimit(bundleId: bundleId, timeLimit: newValue * 3600.0)
-                }
+                alertSettings.appLimits[bundleId] = newValue
+                saveAlertSettings()
             }
         )
     }
@@ -714,119 +707,6 @@ struct SettingsView: View {
         }
         return time
     }
-    
-    // MARK: - App Deletion Functions
-    private func deleteApp(_ bundleId: String) {
-        // Add to deleted apps list
-        if !deletedApps.contains(bundleId) {
-            deletedApps.append(bundleId)
-        }
-        
-        // Remove from AppRestrictionManager
-        Task {
-            await appRestrictionManager.removeAppFromMonitoring(bundleId: bundleId)
-        }
-        
-        // Set up undo timeout (2 days = 172800 seconds)
-        undoTimeout?.invalidate()
-        undoTimeout = Timer.scheduledTimer(withTimeInterval: 172800, repeats: false) { _ in
-            // Permanently remove from deleted apps after 2 days
-            deletedApps.removeAll { $0 == bundleId }
-        }
-        
-        print("🗑️ App deleted from monitoring: \(bundleId)")
-    }
-    
-    private func undoAppDeletion(_ bundleId: String) {
-        // Remove from deleted apps
-        deletedApps.removeAll { $0 == bundleId }
-        
-        // Restore app with default limit (2 hours)
-        Task {
-            await appRestrictionManager.setAppLimit(bundleId: bundleId, timeLimit: 2.0 * 3600.0)
-        }
-        
-        // Cancel timeout for this app
-        undoTimeout?.invalidate()
-        
-        print("↩️ App deletion undone: \(bundleId)")
-    }
-    
-    private func getAppName(for bundleId: String) -> String? {
-        return appRestrictionManager.getAppName(for: bundleId)
-    }
-}
-
-// MARK: - App Limit Data Model
-struct AppLimitData: Identifiable {
-    let id = UUID()
-    let appName: String
-    let bundleId: String
-    let currentUsage: TimeInterval
-    let isDisabled: Bool
-}
-
-// MARK: - New App Detection Row
-struct NewAppDetectionRow: View {
-    let detection: WatchWise.NewAppDetection
-    let onAddToMonitoring: () -> Void
-    let onIgnore: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(detection.appName)
-                        .font(.headline)
-                    
-                    Text("Detected \(formatDetectionTime(detection.detectedAt))")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
-                
-                Image(systemName: "app.badge.plus")
-                    .foregroundColor(.orange)
-                    .font(.title2)
-            }
-            
-            HStack(spacing: 12) {
-                Button(action: onAddToMonitoring) {
-                    HStack {
-                        Image(systemName: "plus.circle.fill")
-                        Text("Add to Monitoring")
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(Color.green)
-                    .cornerRadius(8)
-                }
-                
-                Button(action: onIgnore) {
-                    HStack {
-                        Image(systemName: "xmark.circle.fill")
-                        Text("Ignore")
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(Color.red)
-                    .cornerRadius(8)
-                }
-            }
-        }
-        .padding()
-        .background(Color.orange.opacity(0.1))
-        .cornerRadius(12)
-    }
-    
-    private func formatDetectionTime(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
-    }
 }
 
 // MARK: - Clean App Limit Slider (for Settings)
@@ -837,7 +717,6 @@ struct AppLimitSlider: View {
     @Binding var timeLimit: Double // in hours
     let isDisabled: Bool
     let onDisableToggle: (Bool) -> Void
-    let onDelete: () -> Void
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -852,14 +731,6 @@ struct AppLimitSlider: View {
                 Text("Used: \(formatDuration(currentUsage))")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                
-                // NEW: X button for app deletion
-                Button(action: onDelete) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.red)
-                        .font(.system(size: 16))
-                }
-                .buttonStyle(PlainButtonStyle())
             }
             
             if isDisabled {
@@ -946,46 +817,6 @@ struct AppLimitSlider: View {
         } else {
             return "\(m)m"
         }
-    }
-}
-
-struct CurrentDeviceRow: View {
-    let device: PairedChildDevice
-    
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(device.childName)
-                    .font(.headline)
-                
-                Text(device.deviceName)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                HStack {
-                    Circle()
-                        .fill(device.isOnline ? Color.green : Color.gray)
-                        .frame(width: 8, height: 8)
-                    
-                    Text(device.isOnline ? "Online" : "Offline")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    
-                    Text("• Last sync: \(formatLastSyncTime(device.lastSyncAt))")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-            
-            Spacer()
-        }
-    }
-    
-    private func formatLastSyncTime(_ timestamp: Timestamp) -> String {
-        let date = timestamp.dateValue()
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 
@@ -1132,7 +963,7 @@ struct SupportView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Q: Messages not being delivered?")
                                 .fontWeight(.medium)
-                            Text("A: Ensure both devices have notifications enabled for WatchWise in iOS Settings > Notifications.")
+                            Text("A: Notifications are disabled in this demo version.")
                                 .foregroundColor(.secondary)
                                 .font(.subheadline)
                         }

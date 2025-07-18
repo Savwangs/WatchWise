@@ -57,9 +57,6 @@ class NewAppDetectionManager: ObservableObject {
                     // Add to local state
                     newAppDetections.append(detection)
                     
-                    // Send notification to parent
-                    await sendNewAppNotification(detection)
-                    
                     print("🆕 New app detected: \(appName) (\(bundleId))")
                 }
             }
@@ -185,27 +182,7 @@ class NewAppDetectionManager: ObservableObject {
             ])
     }
     
-    private func sendNewAppNotification(_ detection: WatchWise.NewAppDetection) async {
-        do {
-            try await db.collection("notifications").addDocument(data: [
-                "parentId": Auth.auth().currentUser?.uid ?? "",
-                "type": "new_app_detected",
-                "title": "New App Detected",
-                "message": "\(detection.appName) has been installed on your child's device",
-                "bundleIdentifier": detection.bundleIdentifier,
-                "timestamp": Timestamp(),
-                "isRead": false,
-                "data": [
-                    "detectionId": detection.id.uuidString
-                ]
-            ])
-            
-            print("🔔 Sent new app notification for \(detection.appName)")
-            
-        } catch {
-            print("❌ Error sending new app notification: \(error)")
-        }
-    }
+
     
     private func startDetectionMonitoring() {
         // Check for new apps every 5 minutes

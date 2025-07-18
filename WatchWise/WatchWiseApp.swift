@@ -10,7 +10,6 @@ import FirebaseCore
 import FirebaseAuth
 import FirebaseFirestore
 import FirebaseMessaging
-import UserNotifications
 import BackgroundTasks
 
 class AppDelegate: NSObject, UIApplicationDelegate {
@@ -45,30 +44,11 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         // Configure Firebase Messaging
         Messaging.messaging().delegate = self
         
-        // Request notification permissions
-        UNUserNotificationCenter.current().delegate = self
-        requestNotificationPermissions()
-        
         // Configure background tasks
         configureBackgroundTasks()
         
         print("🚀 WatchWise App initialized successfully")
         return true
-    }
-    
-    private func requestNotificationPermissions() {
-        UNUserNotificationCenter.current().requestAuthorization(
-            options: [.alert, .badge, .sound]
-        ) { granted, error in
-            DispatchQueue.main.async {
-                if granted {
-                    print("✅ Notification permissions granted")
-                    UIApplication.shared.registerForRemoteNotifications()
-                } else {
-                    print("❌ Notification permissions denied: \(error?.localizedDescription ?? "Unknown error")")
-                }
-            }
-        }
     }
     
     func application(
@@ -130,42 +110,7 @@ extension AppDelegate: MessagingDelegate {
     }
 }
 
-extension AppDelegate: UNUserNotificationCenterDelegate {
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        // Show notification even when app is in foreground
-        completionHandler([.banner, .sound])
-    }
-    
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse,
-        withCompletionHandler completionHandler: @escaping () -> Void
-    ) {
-        // Handle notification tap
-        let userInfo = response.notification.request.content.userInfo
-        print("📬 Notification tapped: \(userInfo)")
-        
-        // Handle deep linking based on notification data
-        if let messageType = userInfo["type"] as? String {
-            switch messageType {
-            case "parent_message":
-                // Navigate to messages screen
-                NotificationCenter.default.post(name: .navigateToMessages, object: nil)
-            case "screen_time_alert":
-                // Navigate to dashboard
-                NotificationCenter.default.post(name: .navigateToDashboard, object: nil)
-            default:
-                break
-            }
-        }
-        
-        completionHandler()
-    }
-}
+
 
 @main
 struct WatchWiseApp: App {
@@ -173,7 +118,6 @@ struct WatchWiseApp: App {
     @StateObject private var authManager = AuthenticationManager()
     @StateObject private var databaseManager = DatabaseManager.shared
     @StateObject private var activityMonitoringManager = ActivityMonitoringManager.shared
-    @StateObject private var notificationManager = NotificationManager.shared
     @StateObject private var networkMonitor = NetworkMonitor.shared
     
     var body: some Scene {
@@ -182,7 +126,6 @@ struct WatchWiseApp: App {
                 .environmentObject(authManager)
                 .environmentObject(databaseManager)
                 .environmentObject(activityMonitoringManager)
-                .environmentObject(notificationManager)
                 .environmentObject(networkMonitor)
                 .onAppear {
                     setupAppearance()
@@ -197,7 +140,6 @@ struct WatchWiseApp: App {
             // Check if this is a child device (you can add logic to determine user type)
             // For now, we'll start monitoring for all users
             activityMonitoringManager.startMonitoring()
-            notificationManager.connect(userId: currentUser.uid)
             
             // Start background processing
             #if !targetEnvironment(simulator)

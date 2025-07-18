@@ -311,59 +311,16 @@ class ActivityMonitoringManager: ObservableObject {
                 let parentUserId = relationshipData["parentUserId"] as? String ?? ""
                 let childName = relationshipData["childName"] as? String ?? "Child"
                 
-                // Determine notification message based on missed heartbeats
-                let (title, message) = getMissedHeartbeatMessage(missedHeartbeats: missedHeartbeats, childName: childName)
-                
-                // Create notification for parent
-                try await firebaseManager.db.collection("notifications").addDocument(data: [
-                    "parentUserId": parentUserId,
-                    "childUserId": currentUser.uid,
-                    "childName": childName,
-                    "type": "missed_heartbeat",
-                    "title": title,
-                    "message": message,
-                    "missedHeartbeats": missedHeartbeats,
-                    "timestamp": Timestamp(),
-                    "isRead": false
-                ])
-                
-                print("📧 Sent missed heartbeat notification to parent: \(title)")
+                // Missed heartbeat (no notification)
+                print("📧 Missed heartbeat for \(childName): \(missedHeartbeats) consecutive")
             }
             
         } catch {
-            print("❌ Error sending missed heartbeat notification: \(error)")
+            print("❌ Error processing missed heartbeat: \(error)")
         }
     }
     
-    private func getMissedHeartbeatMessage(missedHeartbeats: Int, childName: String) -> (String, String) {
-        switch missedHeartbeats {
-        case 1:
-            return (
-                "First Heartbeat Missed",
-                "\(childName)'s device missed its first heartbeat. The WatchWise app may have been closed or the device is having connectivity issues."
-            )
-        case 2:
-            return (
-                "Second Heartbeat Missed",
-                "\(childName)'s device has missed 2 consecutive heartbeats. The app may have been deleted or the device is turned off."
-            )
-        case 3:
-            return (
-                "Third Heartbeat Missed",
-                "\(childName)'s device has missed 3 consecutive heartbeats. The WatchWise app has likely been deleted from the device."
-            )
-        case 4:
-            return (
-                "Fourth Heartbeat Missed",
-                "\(childName)'s device has missed 4 consecutive heartbeats. The WatchWise app has almost certainly been deleted."
-            )
-        default:
-            return (
-                "Extended Heartbeat Failure",
-                "\(childName)'s device has been offline for an extended period. The WatchWise app has been deleted or the device is experiencing issues."
-            )
-        }
-    }
+
     
     // MARK: - Activity Tracking (Legacy - for non-child users)
     

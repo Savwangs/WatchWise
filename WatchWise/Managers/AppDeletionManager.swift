@@ -66,8 +66,8 @@ class AppDeletionManager: ObservableObject {
                     // Add to local state
                     deletedApps.append(deletedApp)
                     
-                    // Send notification to parent
-                    await sendDeletionNotification(deletedApp)
+                                // App deleted (no notification)
+            print("🗑️ App deleted: \(deletedApp.appName)")
                     
                     print("🗑️ App deleted: \(appName) (\(bundleId))")
                 }
@@ -237,30 +237,7 @@ class AppDeletionManager: ObservableObject {
             .setData(data, merge: true)
     }
     
-    private func sendDeletionNotification(_ deletedApp: DeletedApp) async {
-        do {
-            let notificationData: [String: Any] = [
-                "recipientId": deletedApp.parentId,
-                "type": "app_deleted",
-                "title": "App Deleted",
-                "message": "\(deletedApp.appName) has been deleted from your child's device",
-                "bundleId": deletedApp.bundleId,
-                "wasMonitored": deletedApp.wasMonitored,
-                "timestamp": Timestamp(),
-                "isRead": false,
-                "data": [
-                    "deletedAppId": deletedApp.id.uuidString
-                ]
-            ]
-            
-            try await db.collection("notifications").addDocument(data: notificationData)
-            
-            print("🔔 Sent deletion notification for \(deletedApp.appName)")
-            
-        } catch {
-            print("❌ Error sending deletion notification: \(error)")
-        }
-    }
+
     
     private func startDeletionMonitoring() {
         // Check for deleted apps every 10 minutes

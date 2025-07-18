@@ -92,8 +92,8 @@ class MessagingManager: ObservableObject {
             // Don't add to local messages - let the listener handle it
             // This prevents duplicate messages
             
-            // Send notification to child
-            await sendMessageNotification(message)
+            // Message sent (no notification)
+            print("📱 Message sent to child")
             
             print("💬 Sent message: \(text)")
             
@@ -124,8 +124,8 @@ class MessagingManager: ObservableObject {
             // Don't add to local messages - let the listener handle it
             // This prevents duplicate messages
             
-            // Send notification to parent
-            await sendMessageNotification(message)
+            // Message received (no notification)
+            print("📱 Message received from child")
             
             print("💬 Child sent message: \(text)")
             
@@ -325,27 +325,7 @@ class MessagingManager: ObservableObject {
         print("✅ Message saved successfully to Firebase")
     }
     
-    private func sendMessageNotification(_ message: Message) async {
-        do {
-            let notificationData: [String: Any] = [
-                "recipientId": message.receiverId,
-                "type": "new_message",
-                "title": message.senderType == .parent ? "Message from Parent" : "Message from Child",
-                "message": message.text,
-                "senderId": message.senderId,
-                "messageId": message.id,
-                "timestamp": Timestamp(),
-                "isRead": false
-            ]
-            
-            try await db.collection("notifications").addDocument(data: notificationData)
-            
-            print("🔔 Sent message notification")
-            
-        } catch {
-            print("❌ Error sending message notification: \(error)")
-        }
-    }
+
     
     private func getChatId(parentId: String, childId: String) -> String {
         // Create a consistent chat ID by sorting the IDs
