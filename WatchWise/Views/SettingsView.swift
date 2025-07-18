@@ -639,8 +639,8 @@ struct SettingsView: View {
                 usageRanges: nil
             ),
             AppUsage(
-                appName: "Messages",
-                bundleIdentifier: "com.apple.MobileSMS",
+                appName: "Reddit",
+                bundleIdentifier: "com.reddit.Reddit",
                 duration: 900, // 15m
                 timestamp: Date().addingTimeInterval(-600),
                 usageRanges: nil

@@ -141,7 +141,7 @@ struct ChildHomeView: View {
                                     .foregroundColor(.secondary)
                                 
                                 HStack {
-                                    Text("10:00 PM - 5:00 AM")
+                                    Text("10:00 PM - 8:00 AM")
                                         .font(.title3)
                                         .fontWeight(.medium)
                                         .foregroundColor(.purple)

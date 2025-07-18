@@ -8,7 +8,7 @@ import SwiftUI
 import Charts
 import FirebaseAuth
 
-// DEMO DATA START - Extended app usage data to include Messages
+// DEMO DATA START - Extended app usage data to include Reddit
 extension ScreenTimeManager {
     static let demoAppUsages: [AppUsage] = [
         AppUsage(appName: "Instagram", bundleIdentifier: "com.burbn.instagram", duration: 4500, timestamp: Date().addingTimeInterval(-3600), usageRanges: nil), // 1h 15m (30m + 45m from graph)
@@ -16,7 +16,7 @@ extension ScreenTimeManager {
         AppUsage(appName: "YouTube", bundleIdentifier: "com.google.ios.youtube", duration: 3600, timestamp: Date().addingTimeInterval(-5400), usageRanges: nil), // 1h (20m + 40m from graph)
         AppUsage(appName: "Snapchat", bundleIdentifier: "com.toyopagroup.picaboo", duration: 1800, timestamp: Date().addingTimeInterval(-900), usageRanges: nil), // 30m (matches graph)
         AppUsage(appName: "Safari", bundleIdentifier: "com.apple.mobilesafari", duration: 1200, timestamp: Date().addingTimeInterval(-1800), usageRanges: nil), // 20m (matches graph)
-        AppUsage(appName: "Messages", bundleIdentifier: "com.apple.MobileSMS", duration: 900, timestamp: Date().addingTimeInterval(-600), usageRanges: nil) // 15m (matches graph)
+        AppUsage(appName: "Reddit", bundleIdentifier: "com.reddit.Reddit", duration: 900, timestamp: Date().addingTimeInterval(-600), usageRanges: nil) // 15m (matches graph)
     ]
 }
 // DEMO DATA END
@@ -102,7 +102,7 @@ struct DashboardView: View {
             id: "demo",
             deviceId: "demo-device",
             date: Date(),
-            totalScreenTime: 14400, // 4 hours total
+            totalScreenTime: 14700, // 4h 5m total
             appUsages: ScreenTimeManager.demoAppUsages,
             hourlyBreakdown: [
                 8: 1800,   // 8 AM: 30 min
