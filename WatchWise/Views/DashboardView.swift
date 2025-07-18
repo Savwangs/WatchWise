@@ -5,18 +5,27 @@
 //  Created by Savir Wangoo on 6/2/25.
 //
 import SwiftUI
+import Charts
 import FirebaseAuth
-import FirebaseFirestore
+
+// DEMO DATA START - Extended app usage data to include Messages
+extension ScreenTimeManager {
+    static let demoAppUsages: [AppUsage] = [
+        AppUsage(appName: "Instagram", bundleIdentifier: "com.burbn.instagram", duration: 4500, timestamp: Date().addingTimeInterval(-3600)), // 1h 15m (30m + 45m from graph)
+        AppUsage(appName: "TikTok", bundleIdentifier: "com.zhiliaoapp.musically", duration: 2700, timestamp: Date().addingTimeInterval(-7200)), // 45m (matches graph)
+        AppUsage(appName: "YouTube", bundleIdentifier: "com.google.ios.youtube", duration: 3600, timestamp: Date().addingTimeInterval(-5400)), // 1h (20m + 40m from graph)
+        AppUsage(appName: "Snapchat", bundleIdentifier: "com.toyopagroup.picaboo", duration: 1800, timestamp: Date().addingTimeInterval(-900)), // 30m (matches graph)
+        AppUsage(appName: "Safari", bundleIdentifier: "com.apple.mobilesafari", duration: 1200, timestamp: Date().addingTimeInterval(-1800)), // 20m (matches graph)
+        AppUsage(appName: "Messages", bundleIdentifier: "com.apple.MobileSMS", duration: 900, timestamp: Date().addingTimeInterval(-600)) // 15m (matches graph)
+    ]
+}
+// DEMO DATA END
 
 struct DashboardView: View {
     @EnvironmentObject var authManager: AuthenticationManager
     @StateObject private var screenTimeManager = ScreenTimeManager()
-    @StateObject private var pairingManager = PairingManager.shared
-
     @State private var showingError = false
     @State private var lastRefresh = Date()
-    @State private var selectedDeviceId: String?
-    @State private var showingOfflineAlert = false
     
     var body: some View {
         NavigationStack {
@@ -26,17 +35,8 @@ struct DashboardView: View {
                     HeaderView(
                         lastRefresh: lastRefresh,
                         isLoading: screenTimeManager.isLoading,
-                        pairedDevices: pairingManager.pairedChildren,
-                        selectedDeviceId: $selectedDeviceId,
-                        onRefresh: refreshData,
-                        isOffline: screenTimeManager.isOffline,
-                        lastSyncTime: screenTimeManager.lastSyncTime
+                        onRefresh: refreshData
                     )
-                    
-                    // Offline Alert
-                    if screenTimeManager.isOffline {
-                        OfflineAlertView()
-                    }
                     
                     // Error State
                     if let errorMessage = screenTimeManager.errorMessage {
@@ -60,12 +60,6 @@ struct DashboardView: View {
                     // Data Display
                     else if let screenTimeData = screenTimeManager.todayScreenTime {
                         DataDisplayView(screenTimeData: screenTimeData)
-                        
-                        // Real-time Status
-                        RealTimeStatusView()
-                        
-                        // Daily Reset Info
-                        DailyResetInfoView()
                     }
                 }
                 .padding(.bottom, 100) // Tab bar clearance
@@ -76,22 +70,6 @@ struct DashboardView: View {
             }
         }
         .onAppear {
-            Task {
-                await pairingManager.loadPairedChildren()
-            }
-            // Load previously selected device
-            if selectedDeviceId == nil {
-                selectedDeviceId = UserDefaults.standard.string(forKey: "selectedDeviceId")
-            }
-            loadInitialData()
-        }
-        .onChange(of: selectedDeviceId) { newDeviceId in
-            // Save selected device to UserDefaults for SettingsView
-            if let deviceId = newDeviceId {
-                UserDefaults.standard.set(deviceId, forKey: "selectedDeviceId")
-            } else {
-                UserDefaults.standard.removeObject(forKey: "selectedDeviceId")
-            }
             loadInitialData()
         }
         .alert("Error", isPresented: $showingError) {
@@ -104,9 +82,6 @@ struct DashboardView: View {
         .onChange(of: screenTimeManager.errorMessage) { errorMessage in
             showingError = errorMessage != nil
         }
-        .onDisappear {
-            screenTimeManager.disconnect()
-        }
     }
     
     // MARK: - Data Loading Methods
@@ -116,13 +91,7 @@ struct DashboardView: View {
             return
         }
         
-        // If no device is selected and we have paired devices, select the first one
-        if selectedDeviceId == nil && !pairingManager.pairedChildren.isEmpty {
-            selectedDeviceId = pairingManager.pairedChildren.first?.childUserId
-        }
-        
-        // Load data for selected device
-        screenTimeManager.loadTodayScreenTime(parentId: parentId, childDeviceId: selectedDeviceId)
+        screenTimeManager.loadTodayScreenTime(parentId: parentId)
     }
     
     private func refreshData() {
@@ -132,8 +101,7 @@ struct DashboardView: View {
         }
         
         lastRefresh = Date()
-        
-        screenTimeManager.refreshData(parentId: parentId, childDeviceId: selectedDeviceId)
+        screenTimeManager.refreshData(parentId: parentId)
     }
     
     private func refreshDataAsync() async {
@@ -141,143 +109,50 @@ struct DashboardView: View {
             refreshData()
         }
     }
-    
-
 }
 
 // MARK: - Header View
 struct HeaderView: View {
     let lastRefresh: Date
     let isLoading: Bool
-    let pairedDevices: [PairedChildDevice]
-    @Binding var selectedDeviceId: String?
     let onRefresh: () -> Void
-    let isOffline: Bool
-    let lastSyncTime: Date?
     
-    @State private var showingDevicePicker = false
-    
-    var selectedDevice: PairedChildDevice? {
-        pairedDevices.first { $0.childUserId == selectedDeviceId }
-    }
-    
-    var body: some View {
-        VStack(spacing: 12) {
-            // Device Selector
-            if !pairedDevices.isEmpty {
-                HStack {
-                    Button(action: {
-                        showingDevicePicker = true
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "iphone")
-                                .foregroundColor(.blue)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(selectedDevice?.childName ?? "Select Device")
-                                    .font(.headline)
-                                    .foregroundColor(.primary)
-                                
-                                Text(selectedDevice?.deviceName ?? "No device selected")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            Spacer()
-                            
-                            Image(systemName: "chevron.down")
-                                .foregroundColor(.blue)
-                                .font(.caption)
-                        }
-                        .padding()
-                        .background(Color(.systemGray6))
-                        .cornerRadius(12)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                }
-                .padding(.horizontal)
-            }
-            
-            // Usage Header
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("\(selectedDevice?.childName ?? "Child")'s Usage Today")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    
-                    HStack {
-                        Text(Date(), style: .date)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        
-                        if !isLoading {
-                            if isOffline {
-                                Text("• Offline mode")
-                                    .font(.caption)
-                                    .foregroundColor(.orange)
-                            } else if let syncTime = lastSyncTime {
-                                Text("• Last updated: \(syncTime, style: .time)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            } else {
-                                Text("• Last updated: \(lastRefresh, style: .time)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-                
-                Spacer()
-                
-                Button(action: onRefresh) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.title2)
-                        .foregroundColor(.blue)
-                        .rotationEffect(.degrees(isLoading ? 360 : 0))
-                        .animation(
-                            isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default,
-                            value: isLoading
-                        )
-                }
-                .disabled(isLoading)
-            }
-            .padding(.horizontal)
-        }
-        .padding(.top, 10)
-        .sheet(isPresented: $showingDevicePicker) {
-            DevicePickerView(
-                pairedDevices: pairedDevices,
-                selectedDeviceId: $selectedDeviceId
-            )
-        }
-    }
-}
-
-// MARK: - Offline Alert View
-struct OfflineAlertView: View {
     var body: some View {
         HStack {
-            Image(systemName: "wifi.slash")
-                .foregroundColor(.orange)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Offline Mode")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.orange)
+            VStack(alignment: .leading) {
+                Text("Savir's Usage Today")
+                    .font(.title2)
+                    .fontWeight(.bold)
                 
-                Text("Showing cached data. Connect to internet for live updates.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                HStack {
+                    Text(Date(), style: .date)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    if !isLoading {
+                        Text("• Last updated: \(lastRefresh, style: .time)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
             
             Spacer()
+            
+            Button(action: onRefresh) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.title2)
+                    .foregroundColor(.blue)
+                    .rotationEffect(.degrees(isLoading ? 360 : 0))
+                    .animation(
+                        isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default,
+                        value: isLoading
+                    )
+            }
+            .disabled(isLoading)
         }
-        .padding()
-        .background(Color.orange.opacity(0.1))
-        .cornerRadius(8)
         .padding(.horizontal)
+        .padding(.top, 10)
     }
 }
 
@@ -388,9 +263,9 @@ struct DataDisplayView: View {
                 TopAppsCard(appUsages: screenTimeData.appUsages)
             }
             
-            // App Usage Timeline (only show if we have app data with usage ranges)
-            if !screenTimeData.appUsages.isEmpty {
-                AppUsageTimelineCard(appUsages: screenTimeData.appUsages)
+            // Hourly Breakdown Chart (only show if we have hourly data)
+            if !screenTimeData.hourlyBreakdown.isEmpty {
+                AppUsageTimelineCard(hourlyData: screenTimeData.hourlyBreakdown)
             }
             
             // Data Collection Info
@@ -446,31 +321,18 @@ struct ScreenTimeCard: View {
 struct TopAppsCard: View {
     let appUsages: [AppUsage]
     
-    // App colors for consistent visualization
+    // DEMO DATA START - App colors for consistent visualization
     private let appColors: [String: Color] = [
         "Instagram": .purple,
         "TikTok": .black,
         "YouTube": .red,
         "Safari": .blue,
         "Messages": .green,
-        "Snapchat": .yellow,
-        "WhatsApp": .green,
-        "Facebook": .blue,
-        "Twitter": .blue,
-        "Discord": .purple,
-        "Reddit": .orange,
-        "Netflix": .red,
-        "Spotify": .green,
-        "Minecraft": .green,
-        "Roblox": .red,
-        "Fortnite": .purple,
-        "Call of Duty": .orange,
-        "PUBG": .yellow,
-        "Genshin Impact": .blue,
-        "Among Us": .purple
+        "Snapchat": .yellow
     ]
+    // DEMO DATA END
     
-    // Sort apps by duration to ensure all apps are shown
+    // Sort apps by duration to ensure all apps including Messages are shown
     private var sortedAppUsages: [AppUsage] {
         return appUsages.sorted { $0.duration > $1.duration }
     }
@@ -529,39 +391,61 @@ struct TopAppsCard: View {
     }
 }
 
-// MARK: - App Usage Timeline Card
+// MARK: - App Usage Timeline Card (REPLACES HourlyBreakdownCard)
 struct AppUsageTimelineCard: View {
-    let appUsages: [AppUsage]
-    @State private var selectedApp: AppUsage?
-    @State private var showingAppDetail = false
+    let hourlyData: [Int: TimeInterval]
     
-    // App colors for consistent visualization
+    // DEMO DATA START - App colors for consistent visualization
     private let appColors: [String: Color] = [
         "Instagram": .purple,
         "TikTok": .black,
         "YouTube": .red,
         "Safari": .blue,
         "Messages": .green,
-        "Snapchat": .yellow,
-        "WhatsApp": .green,
-        "Facebook": .blue,
-        "Twitter": .blue,
-        "Discord": .purple,
-        "Reddit": .orange,
-        "Netflix": .red,
-        "Spotify": .green,
-        "Minecraft": .green,
-        "Roblox": .red,
-        "Fortnite": .purple,
-        "Call of Duty": .orange,
-        "PUBG": .yellow,
-        "Genshin Impact": .blue,
-        "Among Us": .purple
+        "Snapchat": .yellow
     ]
     
-    // Get apps with usage ranges
-    private var appsWithRanges: [AppUsage] {
-        return appUsages.filter { $0.usageRanges != nil && !($0.usageRanges?.isEmpty ?? true) }
+    // DEMO DATA START - Timeline app usage with specific time ranges
+    private let timelineAppUsage: [(appName: String, color: Color, timeBlocks: [(startHour: Int, startMinute: Int, endHour: Int, endMinute: Int)])] = [
+        ("Instagram", .purple, [(8, 5, 8, 35), (18, 0, 18, 45)]), // 8:05 AM-8:35 AM and 6:00 PM-6:45 PM
+        ("TikTok", .black, [(12, 5, 12, 22), (12, 50, 13, 18)]), // 12:05 PM-12:22 PM and 12:50 PM-1:18 PM
+        ("YouTube", .red, [(12, 25, 12, 45), (14, 0, 14, 40)]), // 12:25 PM-12:45 PM and 2:00 PM-2:40 PM
+        ("Safari", .blue, [(16, 0, 16, 20)]), // 4:00 PM-4:20 PM
+        ("Messages", .green, [(20, 15, 20, 30)]), // 8:15 PM-8:30 PM
+        ("Snapchat", .yellow, [(17, 15, 17, 45)]) // 5:15 PM-5:45 PM
+    ]
+    // DEMO DATA END
+    // State for tap interaction
+    @State private var selectedBlock: (appName: String, startTime: String, endTime: String, position: CGPoint)? = nil
+    
+    @ViewBuilder
+    private var overlayContent: some View {
+        if let block = selectedBlock {
+            VStack(spacing: 8) {
+                Text("\(block.appName) Usage:")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                Text("\(block.startTime) - \(block.endTime)")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                
+                Button("OK") {
+                    selectedBlock = nil
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(8)
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+            .offset(x: block.position.x - 60, y: block.position.y - 40)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedBlock != nil)
+        }
     }
     
     var body: some View {
@@ -570,336 +454,186 @@ struct AppUsageTimelineCard: View {
             HStack {
                 Image(systemName: "clock.fill")
                     .foregroundColor(.blue)
-                Text("App Usage Timeline")
+                Text("App Usage Times")
                     .font(.title2)
                     .fontWeight(.bold)
                 Spacer()
             }
             .padding(.horizontal)
             
-            // Timeline Content
-            if appsWithRanges.isEmpty {
-                Text("No detailed usage data available")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .padding()
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 16) {
-                        ForEach(appsWithRanges, id: \.bundleIdentifier) { app in
-                            AppTimelineRow(
-                                app: app,
-                                color: appColors[app.appName] ?? .gray,
-                                onTap: {
-                                    selectedApp = app
-                                    showingAppDetail = true
-                                }
-                            )
-                        }
+            // Timeline Container
+            VStack(spacing: 0) {
+                // Time axis labels (6 AM to 10 PM)
+                HStack(spacing: 0) {
+                    ForEach([6, 8, 10, 12, 14, 16, 18, 20, 22], id: \.self) { hour in
+                        Text(formatTimeLabel(hour))
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity)
                     }
-                    .padding(.horizontal)
                 }
-                .frame(maxHeight: 400)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
+                
+                // App usage bars
+                VStack(spacing: 10) {
+                    ForEach(timelineAppUsage, id: \.appName) { app in
+                        AppTimelineRow(
+                            appName: app.appName,
+                            color: app.color,
+                            timeBlocks: app.timeBlocks,
+                            onBlockTap: handleBlockTap
+                        )
+                    }
+                }
+                .padding(.horizontal, 20)
             }
+            .padding(.vertical, 16)
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
         }
         .padding()
         .background(Color(.systemGray6))
         .cornerRadius(12)
         .padding(.horizontal)
-        .sheet(isPresented: $showingAppDetail) {
-            if let app = selectedApp {
-                AppDetailView(app: app, color: appColors[app.appName] ?? .gray)
-            }
+        // DEMO DATA START - Bubble overlay for showing app usage details
+        .overlay(overlayContent)
+    }
+    
+    private func formatTimeLabel(_ hour: Int) -> String {
+        switch hour {
+            case 6: return "6a"
+            case 8: return "8"
+            case 10: return "10"
+            case 12: return "12p"
+            case 14: return "2"
+            case 16: return "4"
+            case 18: return "6p"
+            case 20: return "8"
+            case 22: return "10p"
+            default: return "\(hour)"
         }
     }
+    
+    // DEMO DATA START - Updated tap handling with position tracking
+    private func handleBlockTap(appName: String, timeBlock: (startHour: Int, startMinute: Int, endHour: Int, endMinute: Int), at position: CGPoint) {
+        let startTime = formatTime(hour: timeBlock.startHour, minute: timeBlock.startMinute)
+        let endTime = formatTime(hour: timeBlock.endHour, minute: timeBlock.endMinute)
+            
+        selectedBlock = (appName: appName, startTime: startTime, endTime: endTime, position: position)
+    }
+    // DEMO DATA END
+        
+    private func formatTime(hour: Int, minute: Int) -> String {
+        let period = hour < 12 ? "AM" : "PM"
+        let displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour)
+        return String(format: "%d:%02d %@", displayHour, minute, period)
+    }
+    // DEMO DATA END
 }
 
 // MARK: - App Timeline Row
 struct AppTimelineRow: View {
-    let app: AppUsage
+    let appName: String
     let color: Color
-    let onTap: () -> Void
+    let timeBlocks: [(startHour: Int, startMinute: Int, endHour: Int, endMinute: Int)]
+    // DEMO DATA START - Updated callback to include tap position
+    let onBlockTap: (String, (startHour: Int, startMinute: Int, endHour: Int, endMinute: Int), CGPoint) -> Void
+    // DEMO DATA END
+    
+    // Timeline spans from 6 AM (hour 6) to 10 PM (hour 22) = 16 hours total
+    private let startHour: Int = 6
+    private let endHour: Int = 22
+    private let totalHours: Int = 16
     
     var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 12) {
-                // App Header
-                HStack(spacing: 12) {
-                    // App Icon/Color
-                    Circle()
-                        .fill(color)
-                        .frame(width: 40, height: 40)
-                        .overlay(
-                            Image(systemName: "app.fill")
-                                .foregroundColor(.white)
-                                .font(.system(size: 16))
-                        )
+        HStack(spacing: 0) {
+            // Timeline container
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    // Background timeline
+                    Rectangle()
+                        .fill(Color(.systemGray5))
+                        .frame(height: 12)
+                        .cornerRadius(6)
                     
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(app.appName)
-                            .font(.headline)
-                            .foregroundColor(.primary)
+                    // Usage bars - This is the problematic part
+                    ForEach(Array(timeBlocks.enumerated()), id: \.offset) { index, block in
+                        let startPosition = calculatePosition(hour: block.startHour, minute: block.startMinute, totalWidth: geometry.size.width)
+                        let endPosition = calculatePosition(hour: block.endHour, minute: block.endMinute, totalWidth: geometry.size.width)
+                        let blockWidth = endPosition - startPosition
                         
-                        Text("Total: \(formatDuration(app.duration))")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .foregroundColor(.secondary)
-                        .font(.caption)
-                }
-                
-                // Visual Timeline
-                if let usageRanges = app.usageRanges, !usageRanges.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        // Time labels
-                        HStack {
-                            Text("6 AM")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text("12 PM")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text("6 PM")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text("12 AM")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        // Timeline bar
-                        ZStack(alignment: .leading) {
-                            // Background timeline
-                            Rectangle()
-                                .fill(Color(.systemGray5))
-                                .frame(height: 20)
-                                .cornerRadius(10)
-                            
-                            // Usage segments
-                            ForEach(usageRanges, id: \.sessionId) { range in
-                                TimelineSegment(range: range, color: color)
-                            }
-                        }
-                        .frame(height: 20)
-                    }
-                }
-            }
-            .padding()
-            .background(Color(.systemBackground))
-            .cornerRadius(12)
-            .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-    
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        let hours = Int(duration) / 3600
-        let minutes = Int(duration) % 3600 / 60
-        
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        } else {
-            return "\(minutes)m"
-        }
-    }
-}
-
-// MARK: - Timeline Segment
-struct TimelineSegment: View {
-    let range: AppUsageRange
-    let color: Color
-    
-    var body: some View {
-        let startHour = Calendar.current.component(.hour, from: range.startTime)
-        let startMinute = Calendar.current.component(.minute, from: range.startTime)
-        let endHour = Calendar.current.component(.hour, from: range.endTime)
-        let endMinute = Calendar.current.component(.minute, from: range.endTime)
-        
-        // Calculate position and width (18 hours from 6 AM to 12 AM)
-        let startPosition = max(0, (Double(startHour) - 6.0 + Double(startMinute) / 60.0) / 18.0)
-        let endPosition = min(1.0, (Double(endHour) - 6.0 + Double(endMinute) / 60.0) / 18.0)
-        let width = endPosition - startPosition
-        
-        Rectangle()
-            .fill(color)
-            .frame(width: max(4, UIScreen.main.bounds.width * 0.7 * width))
-            .offset(x: UIScreen.main.bounds.width * 0.35 * startPosition)
-            .cornerRadius(8)
-    }
-}
-
-// MARK: - App Detail View
-struct AppDetailView: View {
-    let app: AppUsage
-    let color: Color
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    // App Header
-                    HStack(spacing: 16) {
-                        Circle()
+                        let rectangle = RoundedRectangle(cornerRadius: 6)
                             .fill(color)
-                            .frame(width: 60, height: 60)
-                            .overlay(
-                                Image(systemName: "app.fill")
-                                    .foregroundColor(.white)
-                                    .font(.system(size: 24))
-                            )
+                            .frame(width: max(blockWidth, 4), height: 12)
+                            .offset(x: startPosition)
                         
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(app.appName)
-                                .font(.title2)
-                                .fontWeight(.bold)
-                            
-                            Text("Total Usage: \(formatDuration(app.duration))")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
-                    
-                    // Usage Sessions
-                    if let usageRanges = app.usageRanges, !usageRanges.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Usage Sessions")
-                                .font(.headline)
-                                .padding(.horizontal)
-                            
-                            LazyVStack(spacing: 8) {
-                                ForEach(usageRanges.sorted { $0.startTime > $1.startTime }, id: \.sessionId) { range in
-                                    UsageSessionRow(range: range)
-                                }
+                        // Break out the tap gesture logic into a separate function
+                        rectangle
+                            .onTapGesture {
+                                handleTapGesture(
+                                    appName: appName,
+                                    block: block,
+                                    startPosition: startPosition,
+                                    blockWidth: blockWidth,
+                                    geometry: geometry
+                                )
                             }
-                            
-                            // Session Summary
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Session Summary")
-                                    .font(.headline)
-                                    .padding(.horizontal)
-                                
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Total Sessions")
-                                            .font(.subheadline)
-                                            .foregroundColor(.secondary)
-                                        Text("\(usageRanges.count)")
-                                            .font(.title2)
-                                            .fontWeight(.bold)
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    VStack(alignment: .trailing, spacing: 4) {
-                                        Text("Average Session")
-                                            .font(.subheadline)
-                                            .foregroundColor(.secondary)
-                                        Text(formatDuration(app.duration / Double(usageRanges.count)))
-                                            .font(.title2)
-                                            .fontWeight(.bold)
-                                    }
-                                }
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .cornerRadius(8)
-                                .padding(.horizontal)
-                            }
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Usage Sessions")
-                                .font(.headline)
-                                .padding(.horizontal)
-                            
-                            Text("No detailed session data available")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal)
-                        }
-                    }
-                    
-                    Spacer()
-                }
-                .padding()
-            }
-            .navigationTitle("App Details")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
                     }
                 }
             }
+            .frame(height: 12)
         }
     }
-    
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        let hours = Int(duration) / 3600
-        let minutes = Int(duration) % 3600 / 60
-        
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        } else {
-            return "\(minutes)m"
-        }
-    }
-}
 
-// MARK: - Usage Session Row
-struct UsageSessionRow: View {
-    let range: AppUsageRange
-    
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(range.formattedRange)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                
-                Text("Duration: \(formatDuration(range.duration))")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+    // Add this new helper function inside AppTimelineRow
+    private func handleTapGesture(
+        appName: String,
+        block: (startHour: Int, startMinute: Int, endHour: Int, endMinute: Int),
+        startPosition: CGFloat,
+        blockWidth: CGFloat,
+        geometry: GeometryProxy
+    ) {
+        let screenWidth = geometry.size.width
+        let bubbleWidth: CGFloat = 120
+        let bubbleHeight: CGFloat = 80
+
+        let (adjustedX, adjustedY): (CGFloat, CGFloat) = {
+            let baseX = startPosition + (blockWidth / 2)
+            
+            switch appName {
+            case "Instagram":
+                return (baseX - 40, -30)
+            case "Messages":
+                return (baseX - 80, 35)
+            case "Snapchat":
+                return (baseX - 40, 60)
+            default:
+                var x = baseX
+                if x + bubbleWidth/2 > screenWidth {
+                    x = screenWidth - bubbleWidth/2 - 10
+                } else if x - bubbleWidth/2 < 0 {
+                    x = bubbleWidth/2 + 10
+                }
+                return (x, 0)
             }
-            
-            Spacer()
-            
-            Image(systemName: "clock")
-                .foregroundColor(.blue)
-                .font(.caption)
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(8)
-        .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
+        }()
+
+        let globalPosition = CGPoint(x: adjustedX, y: adjustedY)
+        onBlockTap(appName, block, globalPosition)
     }
     
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        let hours = Int(duration) / 3600
-        let minutes = Int(duration) % 3600 / 60
+    private func calculatePosition(hour: Int, minute: Int, totalWidth: CGFloat) -> CGFloat {
+        // Convert time to minutes from start time (6 AM)
+        let totalMinutesFromStart = (hour - startHour) * 60 + minute
+        let totalTimelineMinutes = totalHours * 60
         
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        } else {
-            return "\(minutes)m"
-        }
+        // Calculate position as percentage of total width
+        let percentage = CGFloat(totalMinutesFromStart) / CGFloat(totalTimelineMinutes)
+        return percentage * totalWidth
     }
 }
-
-
 
 // MARK: - Data Info Card
 struct DataInfoCard: View {
@@ -928,203 +662,6 @@ struct DataInfoCard: View {
         .padding(.horizontal)
     }
 }
-
-// MARK: - Real-time Status View
-struct RealTimeStatusView: View {
-    @StateObject private var deviceActivityManager = DeviceActivityDataManager()
-    @State private var isDataStale = false
-    
-    var body: some View {
-        HStack {
-            Image(systemName: isDataStale ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                .foregroundColor(isDataStale ? .orange : .green)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Real-time Monitoring")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                
-                Text(isDataStale ? "Data may be stale" : "Data updates in background")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-            
-            if let lastUpdate = deviceActivityManager.lastUpdateTime {
-                Text("Updated \(formatTimeAgo(lastUpdate))")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(isDataStale ? .orange : .green)
-            }
-        }
-        .padding()
-        .background(Color(isDataStale ? .systemOrange : .systemGreen).opacity(0.1))
-        .cornerRadius(8)
-        .padding(.horizontal)
-        .onAppear {
-            checkDataStatus()
-        }
-        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
-            checkDataStatus()
-        }
-    }
-    
-    private func checkDataStatus() {
-        isDataStale = deviceActivityManager.isDataStale()
-    }
-    
-    private func formatTimeAgo(_ date: Date) -> String {
-        let timeInterval = Date().timeIntervalSince(date)
-        
-        if timeInterval < 60 {
-            return "just now"
-        } else if timeInterval < 3600 {
-            let minutes = Int(timeInterval / 60)
-            return "\(minutes)m ago"
-        } else {
-            let hours = Int(timeInterval / 3600)
-            return "\(hours)h ago"
-        }
-    }
-}
-
-// MARK: - Daily Reset Info View
-struct DailyResetInfoView: View {
-    var body: some View {
-        HStack {
-            Image(systemName: "arrow.clockwise.circle.fill")
-                .foregroundColor(.green)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Daily Reset")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                
-                Text("Screen time resets daily at midnight")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-            
-            Text(timeUntilReset)
-                .font(.caption)
-                .fontWeight(.medium)
-                .foregroundColor(.green)
-        }
-        .padding()
-        .background(Color(.systemGreen).opacity(0.1))
-        .cornerRadius(8)
-        .padding(.horizontal)
-    }
-    
-    private var timeUntilReset: String {
-        let calendar = Calendar.current
-        let now = Date()
-        let tomorrow = calendar.startOfDay(for: calendar.date(byAdding: .day, value: 1, to: now) ?? now)
-        let timeInterval = tomorrow.timeIntervalSince(now)
-        
-        let hours = Int(timeInterval) / 3600
-        let minutes = Int(timeInterval) % 3600 / 60
-        
-        return "\(hours)h \(minutes)m"
-    }
-}
-
-// MARK: - Device Picker View
-struct DevicePickerView: View {
-    let pairedDevices: [PairedChildDevice]
-    @Binding var selectedDeviceId: String?
-    @Environment(\.dismiss) private var dismiss
-    
-    var body: some View {
-        NavigationView {
-            List {
-                ForEach(pairedDevices) { device in
-                    Button(action: {
-                        selectedDeviceId = device.childUserId
-                        dismiss()
-                    }) {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                Circle()
-                                    .fill(device.isOnline ? Color.green : Color.gray)
-                                    .frame(width: 12, height: 12)
-                                
-                                Image(systemName: "iphone")
-                                    .font(.system(size: 20))
-                                    .foregroundColor(.blue)
-                            }
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(device.childName)
-                                    .font(.headline)
-                                    .foregroundColor(.primary)
-                                
-                                Text(device.deviceName)
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                
-                                HStack(spacing: 8) {
-                                    HStack(spacing: 4) {
-                                        Circle()
-                                            .fill(device.isOnline ? Color.green : Color.gray)
-                                            .frame(width: 6, height: 6)
-                                        
-                                        Text(device.connectionStatus)
-                                            .font(.caption)
-                                            .foregroundColor(device.isOnline ? .green : .gray)
-                                    }
-                                    
-                                    Text("Last sync: \(formatLastSyncTime(device.lastSyncAt))")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            
-                            Spacer()
-                            
-                            if device.childUserId == selectedDeviceId {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.blue)
-                                    .font(.title2)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                }
-            }
-            .navigationTitle("Select Device")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-    
-    private func formatLastSyncTime(_ timestamp: Timestamp) -> String {
-        let date = timestamp.dateValue()
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
-    }
-}
-
-// MARK: - Stage 3 Dashboard Cards
-
-
-
-
-
-
-
-
 
 #Preview {
     DashboardView()
