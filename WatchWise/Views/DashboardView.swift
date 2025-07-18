@@ -86,22 +86,37 @@ struct DashboardView: View {
     
     // MARK: - Data Loading Methods
     private func loadInitialData() {
-        guard let parentId = authManager.currentUser?.id else {
-            screenTimeManager.errorMessage = "Authentication required. Please log in again."
-            return
-        }
-        
-        screenTimeManager.loadTodayScreenTime(parentId: parentId)
+        // DEMO DATA - Use demo data for demonstration
+        loadDemoData()
     }
     
     private func refreshData() {
-        guard let parentId = authManager.currentUser?.id else {
-            screenTimeManager.errorMessage = "Authentication required. Please log in again."
-            return
-        }
-        
+        // DEMO DATA - Refresh demo data
         lastRefresh = Date()
-        screenTimeManager.refreshData(parentId: parentId)
+        loadDemoData()
+    }
+    
+    private func loadDemoData() {
+        // Create demo screen time data
+        let demoScreenTimeData = ScreenTimeData(
+            id: "demo",
+            deviceId: "demo-device",
+            date: Date(),
+            totalScreenTime: 14400, // 4 hours total
+            appUsages: ScreenTimeManager.demoAppUsages,
+            hourlyBreakdown: [
+                8: 1800,   // 8 AM: 30 min
+                12: 3600,  // 12 PM: 1 hour
+                14: 2400,  // 2 PM: 40 min
+                16: 1200,  // 4 PM: 20 min
+                18: 2700,  // 6 PM: 45 min
+                20: 2700   // 8 PM: 45 min
+            ]
+        )
+        
+        screenTimeManager.todayScreenTime = demoScreenTimeData
+        screenTimeManager.isLoading = false
+        screenTimeManager.errorMessage = nil
     }
     
     private func refreshDataAsync() async {
