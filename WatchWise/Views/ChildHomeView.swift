@@ -326,11 +326,11 @@ struct ChildHomeView: View {
     }
     
     private func getChildName() -> String {
-        return authManager.currentUser?.name ?? "Child"
+        return "Savir"
     }
     
     private func getDeviceName() -> String {
-        return authManager.currentUser?.deviceName ?? "This Device"
+        return "Savir's iPhone"
     }
     
     private func isScreenTimeAuthorized() -> Bool {

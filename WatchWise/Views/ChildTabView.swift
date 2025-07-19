@@ -150,7 +150,7 @@ struct ChildSettingsView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(authManager.currentUser?.email ?? "")
                                         .font(.body)
-                                    Text("Child Account")
+                                    Text("Savir")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                 }

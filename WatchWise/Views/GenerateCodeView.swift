@@ -104,22 +104,22 @@ struct GenerateCodeView: View {
             
             // Code Generation Section
             else {
-                VStack(spacing: 20) {
+                VStack(spacing: 10) { // Reduced from 15
                     if isCodeGenerated, let codeData = pairingCodeData {
                         // Display Generated Code with QR Code
-                        VStack(spacing: 20) {
+                        VStack(spacing: 10) { // Reduced from 15
                             Text("Your Pairing Code")
                                 .font(.headline)
                                 .foregroundColor(.secondary)
                             
                             // QR Code Display
                             if let qrCodeImage = codeData.qrCodeImage {
-                                VStack(spacing: 12) {
+                                VStack(spacing: 6) { // Reduced from 8
                                     Image(uiImage: qrCodeImage)
                                         .interpolation(.none)
                                         .resizable()
                                         .scaledToFit()
-                                        .frame(width: 200, height: 200)
+                                        .frame(width: 160, height: 160) // Reduced from 180x180
                                         .background(Color.white)
                                         .cornerRadius(12)
                                         .shadow(radius: 4)
@@ -132,13 +132,13 @@ struct GenerateCodeView: View {
                             }
                             
                             // Code Display
-                            VStack(spacing: 8) {
+                            VStack(spacing: 6) { // Reduced from 8
                                 Text("Or enter this code manually:")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                                 
                                 Text(codeData.code)
-                                    .font(.system(size: 36, weight: .bold, design: .monospaced))
+                                    .font(.system(size: 32, weight: .bold, design: .monospaced)) // Reduced from 36
                                     .foregroundColor(.blue)
                                     .padding()
                                     .background(Color(.systemGray6))
@@ -152,7 +152,7 @@ struct GenerateCodeView: View {
                             }
                             
                             // Timer
-                            VStack(spacing: 8) {
+                            VStack(spacing: 6) { // Reduced from 8
                                 Text("Code expires in:")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
@@ -163,12 +163,12 @@ struct GenerateCodeView: View {
                             }
                             
                             // Instructions
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 6) { // Reduced from 8
                                 Text("Share this code with your parent:")
                                     .font(.subheadline)
                                     .fontWeight(.medium)
                                 
-                                VStack(alignment: .leading, spacing: 4) {
+                                VStack(alignment: .leading, spacing: 3) { // Reduced from 4
                                     Text("1. Have your parent register on the WatchWise app")
                                     Text("2. Then have them scan the QR code or manually enter the 6-digit code")
                                 }
@@ -186,12 +186,11 @@ struct GenerateCodeView: View {
                                 .font(.subheadline)
                                 .foregroundColor(.blue)
                         }
-                        .padding(.top, 20)
-                        .disabled(pairingManager.isLoading)
+                        .padding(.top, 10) // Reduced from 20
                         
                         // Manual navigation button (fallback)
-                        VStack(spacing: 16) {
-                            Button(action: navigateToChildHome) {
+                        VStack(spacing: 12) { // Reduced from 16
+                            Button(action: navigateToChildHomeFast) {
                                 VStack(spacing: 4) {
                                     Text("Go to My Home Page")
                                         .font(.headline)
@@ -214,8 +213,8 @@ struct GenerateCodeView: View {
                             }
                             .disabled(pairingManager.isLoading)
                         }
-                        .padding(.top, 20)
-                        .padding(.bottom, 40) // Add bottom padding to ensure buttons are visible
+                        .padding(.top, 5) // Reduced from 10
+                        .padding(.bottom, 10) // Reduced from 20
                         
                     } else {
                         Spacer()
@@ -425,6 +424,20 @@ struct GenerateCodeView: View {
         // Navigate to child home
         print("🔍 Posting showChildHome notification")
         NotificationCenter.default.post(name: .showChildHome, object: nil)
+    }
+    
+    private func navigateToChildHomeFast() {
+        print("🚀 Fast navigation to child home...")
+        
+        // For demo purposes, immediately navigate without Firebase operations
+        // This makes the button response instant
+        DispatchQueue.main.async {
+            // Complete onboarding locally for immediate navigation
+            self.authManager.completeOnboarding()
+            
+            // Navigate instantly
+            NotificationCenter.default.post(name: .showChildHome, object: nil)
+        }
     }
     
     // MARK: - Sign Out

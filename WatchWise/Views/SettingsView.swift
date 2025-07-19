@@ -21,6 +21,7 @@ struct SettingsView: View {
     @State private var deviceToUnlink: ChildDevice?
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var removedApps: [String: Date] = [:] // Track removed apps and removal dates
     
     var body: some View {
         NavigationStack {
@@ -163,8 +164,54 @@ struct SettingsView: View {
                                                     alertSettings.disabledApps.removeAll { $0 == app.bundleIdentifier }
                                                 }
                                                 saveAlertSettings()
+                                            },
+                                            onRemove: {
+                                                removeAppFromMonitoring(app.bundleIdentifier)
                                             }
                                         )
+                                    }
+                                    
+                                    // Removed apps reminder
+                                    if let reminder = getRemovedAppsReminder() {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            HStack {
+                                                Image(systemName: "exclamationmark.triangle.fill")
+                                                    .foregroundColor(.orange)
+                                                Text("Removed Apps")
+                                                    .font(.caption)
+                                                    .fontWeight(.medium)
+                                                    .foregroundColor(.orange)
+                                                Spacer()
+                                            }
+                                            
+                                            Text("You have 3 days to bring these apps back to monitoring:")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                            
+                                            ForEach(getRemovedAppsForRestore(), id: \.bundleId) { removedApp in
+                                                HStack {
+                                                    Text(removedApp.appName)
+                                                        .font(.caption)
+                                                        .foregroundColor(.primary)
+                                                    
+                                                    Spacer()
+                                                    
+                                                    Button("Restore") {
+                                                        restoreAppToMonitoring(removedApp.bundleId)
+                                                    }
+                                                    .font(.caption)
+                                                    .foregroundColor(.blue)
+                                                    .padding(.horizontal, 8)
+                                                    .padding(.vertical, 4)
+                                                    .background(Color.blue.opacity(0.1))
+                                                    .cornerRadius(6)
+                                                }
+                                                .padding(.vertical, 2)
+                                            }
+                                        }
+                                        .padding()
+                                        .background(Color.orange.opacity(0.1))
+                                        .cornerRadius(8)
                                     }
                                 }
                             }
@@ -646,7 +693,13 @@ struct SettingsView: View {
                 usageRanges: nil
             )
         ]
-        return Array(demoApps.prefix(6)) // Top 6 apps
+        
+        // Filter out removed apps
+        let filteredApps = demoApps.filter { app in
+            !removedApps.keys.contains(app.bundleIdentifier)
+        }
+        
+        return Array(filteredApps.prefix(6)) // Top 6 apps
         // DEMO DATA - END (Remove in production)
         
         /* PRODUCTION CODE - Uncomment when ready for production
@@ -654,6 +707,51 @@ struct SettingsView: View {
         // This would come from your actual screen time data source
         return []
         */
+    }
+    
+    private func removeAppFromMonitoring(_ bundleId: String) {
+        removedApps[bundleId] = Date()
+        print("🗑️ Removed app from monitoring: \(bundleId)")
+    }
+    
+    private func restoreAppToMonitoring(_ bundleId: String) {
+        removedApps.removeValue(forKey: bundleId)
+        print("✅ Restored app to monitoring: \(bundleId)")
+    }
+    
+    private func getRemovedAppsReminder() -> String? {
+        let threeDaysAgo = Calendar.current.date(byAdding: .day, value: -3, to: Date()) ?? Date()
+        let recentlyRemoved = removedApps.filter { $0.value > threeDaysAgo }
+        
+        if !recentlyRemoved.isEmpty {
+            let appNames = recentlyRemoved.compactMap { bundleId, _ in
+                getTopAppsForLimits().first { $0.bundleIdentifier == bundleId }?.appName
+            }
+            return "Parent has 3 days to bring \(appNames.joined(separator: ", ")) back to the list of apps being monitored."
+        }
+        return nil
+    }
+    
+    private func getRemovedAppsForRestore() -> [(bundleId: String, appName: String, removedDate: Date)] {
+        let threeDaysAgo = Calendar.current.date(byAdding: .day, value: -3, to: Date()) ?? Date()
+        let recentlyRemoved = removedApps.filter { $0.value > threeDaysAgo }
+        
+        return recentlyRemoved.compactMap { bundleId, removedDate in
+            // Get app name from demo data
+            let demoApps = [
+                ("Instagram", "com.burbn.instagram"),
+                ("TikTok", "com.zhiliaoapp.musically"),
+                ("YouTube", "com.google.ios.youtube"),
+                ("Safari", "com.apple.mobilesafari"),
+                ("Snapchat", "com.toyopagroup.picaboo"),
+                ("Reddit", "com.reddit.Reddit")
+            ]
+            
+            if let appName = demoApps.first(where: { $0.1 == bundleId })?.0 {
+                return (bundleId: bundleId, appName: appName, removedDate: removedDate)
+            }
+            return nil
+        }
     }
 
     private func loadAlertSettingsWithDefaults() async {
@@ -717,6 +815,7 @@ struct AppLimitSlider: View {
     @Binding var timeLimit: Double // in hours
     let isDisabled: Bool
     let onDisableToggle: (Bool) -> Void
+    let onRemove: () -> Void
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -731,6 +830,14 @@ struct AppLimitSlider: View {
                 Text("Used: \(formatDuration(currentUsage))")
                     .font(.caption)
                     .foregroundColor(.secondary)
+                
+                // X button to remove app from monitoring
+                Button(action: onRemove) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.red)
+                        .font(.title3)
+                }
+                .buttonStyle(PlainButtonStyle())
             }
             
             if isDisabled {
